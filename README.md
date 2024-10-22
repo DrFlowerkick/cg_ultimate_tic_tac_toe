@@ -1,2 +1,2 @@
 # cg_ultimate_tic_tac_toe
-My solution for Ultimate Tic Tac Toe at codingame
+My solution for Ultimate Tic Tac Toe at [codingame](https://www.codingame.com).
