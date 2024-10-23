@@ -379,8 +379,8 @@ fn main() {
     let time_out_successive_turns = Duration::from_millis(95);
     let weighting_factor = 1.4;
     let use_heuristic_score = false;
+    let use_caching = false;
     let debug = true;
-    let keep_root = false;
     let mut mcts: MonteCarloTreeSearch<UltTTT, UltTTTPlayerAction, UltTTTGameDataUpdate> =
         MonteCarloTreeSearch::new(
             game_mode,
@@ -390,8 +390,8 @@ fn main() {
             time_out_successive_turns,
             weighting_factor,
             use_heuristic_score,
+            use_caching,
             debug,
-            keep_root,
         );
     // game loop
     loop {
@@ -431,9 +431,7 @@ fn main() {
 
         let start = mcts.init_root(&game_data, starting_player);
         mcts.expand_tree(start);
-        let (my_game_data, my_action) = mcts.choose_and_execute_actions();
-        game_data = *UltTTT::downcast_self(&my_game_data);
-        let my_action = UltTTTPlayerAction::downcast_self(&my_action);
+        let (_my_game_data, my_action) = mcts.choose_and_execute_actions();
         my_action.execute_action();
 
         turn_counter += 2;
@@ -442,7 +440,68 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Display;
+
     use super::*;
+
+    impl Display for UltTTT {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            const HEAD: &str = "┌─┬─┬─┐┌─┬─┬─┐┌─┬─┬─┐";
+            const MIDDLE: &str = "├─┼─┼─┤├─┼─┼─┤├─┼─┼─┤";
+            const FOOTER: &str = "└─┴─┴─┘└─┴─┴─┘└─┴─┴─┘";
+            for v in 0..V {
+                if v % Y == 0 {
+                    writeln!(f, "{}", HEAD)?;
+                }
+                for u in 0..U {
+                    if u % X == 0 {
+                        write!(f, "│")?;
+                    }
+                    let cell_to_print = UltTTTPlayerAction::from_ext((u, v).into());
+                    write!(f, "{}│", self.get_cell_value(cell_to_print))?;
+                    if u == U - 1 {
+                        writeln!(f)?;
+                    }
+                }
+                if v % Y < Y - 1 {
+                    writeln!(f, "{}", MIDDLE)?;
+                } else {
+                    write!(f, "{}", FOOTER)?;
+                    if v < V - 1 {
+                        writeln!(f)?;
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
+    impl UltTTT {
+        fn get_cell_value(&self, cell: UltTTTPlayerAction) -> TicTacToeStatus {
+            self.map
+                .get(cell.ult_ttt_big)
+                .get_cell_value(cell.ult_ttt_small)
+        }
+    }
+
+    fn print_distribution_of_actions(
+        mcts: &MonteCarloTreeSearch<UltTTT, UltTTTPlayerAction, UltTTTGameDataUpdate>,
+    ) {
+        // This function MUST be run after expand_tree() and before choose_and_execute_actions(),
+        // if you want to get distribution of possible actions for current game turn.
+        let (total_num_of_nodes, children_data) = mcts.node_data_of_root_children();
+        eprintln!("Total number of nodes in tree: {}", total_num_of_nodes);
+        for (possible_action, num_children_nodes, wins, samples) in
+            children_data.iter().filter(|(_, n, ..)| *n > 0)
+        {
+            eprintln!(
+                "Action: {}, percentage of nodes: {:.2}%, win rate: {:.2}%",
+                possible_action.to_ext(),
+                ((*num_children_nodes as f32) / (total_num_of_nodes as f32)) * 100.0,
+                100.0 * wins / samples
+            );
+        }
+    }
 
     #[test]
     fn one_match() {
@@ -454,7 +513,8 @@ mod tests {
         let force_update = true;
         let time_out_first_turn = Duration::from_millis(995);
         let time_out_successive_turns = Duration::from_millis(95);
-        let weighting_factor = 1.4;
+        let weighting_factor_player_one_me = 1.4;
+        let weighting_factor_player_two_enemy = 2.4;
         let use_heuristic_score = false;
         let use_caching_player_one_me = false;
         let use_caching_player_two_enemy = true;
@@ -469,7 +529,7 @@ mod tests {
             force_update,
             time_out_first_turn,
             time_out_successive_turns,
-            weighting_factor,
+            weighting_factor_player_one_me,
             use_heuristic_score,
             use_caching_player_one_me,
             debug,
@@ -484,44 +544,50 @@ mod tests {
             force_update,
             time_out_first_turn,
             time_out_successive_turns,
-            weighting_factor,
+            weighting_factor_player_two_enemy,
             use_heuristic_score,
             use_caching_player_two_enemy,
             debug,
         );
         let mut active_player = MonteCarloPlayer::Me;
-        let mut previous_player_action = MapPoint::<U, V>::new(0, 0);
         let mut game_turn = 0;
         // game loop
         while game_data_me.status.is_vacant() {
             game_turn += 1;
-            match active_player {
-                MonteCarloPlayer::Me => {
-                    eprint!("{:02} me:  ", game_turn);
-                    let start = player_one_me.init_root(&game_data_me, starting_player);
-                    player_one_me.expand_tree(start);
-                    let (my_game_data, my_action) = player_one_me.choose_and_execute_actions();
-                    game_data_me = *UltTTT::downcast_self(&my_game_data);
-                    previous_player_action = UltTTTPlayerAction::downcast_self(&my_action).to_ext();
-                }
-                MonteCarloPlayer::Opp => {
-                    eprint!("{:02} opp: ", game_turn);
-                    game_data_enemy.set_last_opp_action(previous_player_action);
-                    let start =
-                        player_two_enemy.init_root(&game_data_enemy, starting_player.next_player());
-                    player_two_enemy.expand_tree(start);
-                    let (enemy_game_data, opp_action) =
-                        player_two_enemy.choose_and_execute_actions();
-                    game_data_enemy = *UltTTT::downcast_self(&enemy_game_data);
-                    previous_player_action =
-                        UltTTTPlayerAction::downcast_self(&opp_action).to_ext();
-                    // apply player two action to player one game data, since it is needed for while-loop
-                    game_data_me.set_last_opp_action(previous_player_action);
-                }
-            }
+            let (active_player_game_data, active_player_mcts, sp, opp_game_data) =
+                match active_player {
+                    MonteCarloPlayer::Me => {
+                        eprint!("{:02} me:  ", game_turn);
+                        (
+                            &mut game_data_me,
+                            &mut player_one_me,
+                            starting_player,
+                            &mut game_data_enemy,
+                        )
+                    }
+                    MonteCarloPlayer::Opp => {
+                        eprint!("{:02} opp: ", game_turn);
+                        (
+                            &mut game_data_enemy,
+                            &mut player_two_enemy,
+                            starting_player.next_player(),
+                            &mut game_data_me,
+                        )
+                    }
+                };
+            let start = active_player_mcts.init_root(active_player_game_data, sp);
+            active_player_mcts.expand_tree(start);
+            print_distribution_of_actions(active_player_mcts);
+            let (new_game_data, chosen_action) = active_player_mcts.choose_and_execute_actions();
+            eprintln!("Chosen action: {}", chosen_action.to_ext());
+            *active_player_game_data = new_game_data;
+            // apply active player action to opponent player game data
+            opp_game_data.set_last_opp_action(chosen_action.to_ext());
+            // switch active_player
             active_player = active_player.next_player();
         }
         // print result of match
+        eprintln!("{}", game_data_me);
         match game_data_me.status {
             TicTacToeStatus::Vacant => println!("Something went wrong here..."),
             TicTacToeStatus::Player(winner) => match winner {
