@@ -226,7 +226,7 @@ impl UltTTT {
             .get_mut(player_action.ult_ttt_big)
             .set_player(player_action.ult_ttt_small, player);
         self.status = match cell_status {
-            TicTacToeStatus::Vacant => self.status_map.set_vacant(player_action.ult_ttt_big),
+            TicTacToeStatus::Vacant => self.status,
             TicTacToeStatus::Player(winner) => {
                 self.map
                     .get_mut(player_action.ult_ttt_big)
@@ -484,6 +484,7 @@ mod tests {
         }
     }
 
+    // ToDo: move this to mcts! Requires Display trait for MonteCarloAction
     fn print_distribution_of_actions(
         mcts: &MonteCarloTreeSearch<UltTTT, UltTTTPlayerAction, UltTTTGameDataUpdate>,
     ) {
@@ -513,10 +514,10 @@ mod tests {
         let force_update = true;
         let time_out_first_turn = Duration::from_millis(995);
         let time_out_successive_turns = Duration::from_millis(95);
-        let weighting_factor_player_one_me = 1.4;
-        let weighting_factor_player_two_enemy = 2.4;
+        let weighting_factor_player_one_me = 2.4;
+        let weighting_factor_player_two_enemy = 1.4;
         let use_heuristic_score = false;
-        let use_caching_player_one_me = false;
+        let use_caching_player_one_me = true;
         let use_caching_player_two_enemy = true;
         let debug = true;
         let mut player_one_me: MonteCarloTreeSearch<
