@@ -340,7 +340,7 @@ impl MonteCarloGameData for UltTTT {
     }
 }
 macro_rules! parse_input {
-    ($ x : expr , $ t : ident) => {
+    ($ x : expr_2021 , $ t : ident) => {
         $x.trim().parse::<$t>().unwrap()
     };
 }
@@ -841,7 +841,7 @@ pub mod my_lib {
                 fn downcast_self(game_data: &impl MonteCarloGameData) -> &Self;
                 fn apply_my_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool;
                 fn apply_opp_action(&mut self, player_action: &impl MonteCarloPlayerAction)
-                    -> bool;
+                -> bool;
                 fn simultaneous_player_actions_for_simultaneous_game_data_change(
                     &mut self,
                     my_action: &impl MonteCarloPlayerAction,
@@ -997,7 +997,10 @@ pub mod my_lib {
                             }
                             None => {
                                 if self.debug {
-                                    eprintln ! ("Current game state not found in tree. Reinitialize tree after {} played turns" , self . played_turns);
+                                    eprintln!(
+                                        "Current game state not found in tree. Reinitialize tree after {} played turns",
+                                        self.played_turns
+                                    );
                                 }
                                 self.tree_root =
                                     TreeNode::seed_root(MonteCarloNode::<G, A, U>::new(), 0);
@@ -2047,7 +2050,6 @@ pub mod my_lib {
             }
         }
         mod tree_node {
-            use super::unique_id::generate_unique_id;
             use super::BackTrack;
             use super::IterChildren;
             use super::IterParents;
@@ -2055,6 +2057,7 @@ pub mod my_lib {
             use super::LevelOrderTraversal;
             use super::PostOrderTraversal;
             use super::PreOrderTraversal;
+            use super::unique_id::generate_unique_id;
             use std::cell::RefCell;
             use std::cmp::Ordering;
             use std::rc::Rc;
@@ -2335,34 +2338,40 @@ pub mod my_lib {
                 pub fn get_max_level(&self) -> usize {
                     *self.max_level.borrow()
                 }
-                pub fn iter_self(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> {
+                pub fn iter_self(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> + use<N> {
                     IterSelf::new(self.get_self().unwrap())
                 }
-                pub fn iter_children(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> {
+                pub fn iter_children(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> + use<N> {
                     IterChildren::new(self.get_self().unwrap())
                 }
-                pub fn iter_parents(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> {
+                pub fn iter_parents(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> + use<N> {
                     IterParents::new(self.get_self().unwrap())
                 }
-                pub fn iter_back_track(&self) -> impl Iterator<Item = Vec<Rc<TreeNode<N>>>> {
+                pub fn iter_back_track(
+                    &self,
+                ) -> impl Iterator<Item = Vec<Rc<TreeNode<N>>>> + use<N> {
                     BackTrack::new(self.get_self().unwrap())
                 }
-                pub fn iter_pre_order_traversal(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> {
+                pub fn iter_pre_order_traversal(
+                    &self,
+                ) -> impl Iterator<Item = Rc<TreeNode<N>>> + use<N> {
                     PreOrderTraversal::new(self.get_self().unwrap())
                 }
-                pub fn iter_post_order_traversal(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> {
+                pub fn iter_post_order_traversal(
+                    &self,
+                ) -> impl Iterator<Item = Rc<TreeNode<N>>> + use<N> {
                     PostOrderTraversal::new(self.get_self().unwrap())
                 }
                 pub fn iter_level_order_traversal(
                     &self,
-                ) -> impl Iterator<Item = (Rc<TreeNode<N>>, usize)> {
+                ) -> impl Iterator<Item = (Rc<TreeNode<N>>, usize)> + use<N> {
                     LevelOrderTraversal::new(self.get_self().unwrap(), 0, None)
                 }
                 pub fn iter_level_order_traversal_with_borders(
                     &self,
                     start_level: usize,
                     end_level: Option<usize>,
-                ) -> impl Iterator<Item = (Rc<TreeNode<N>>, usize)> {
+                ) -> impl Iterator<Item = (Rc<TreeNode<N>>, usize)> + use<N> {
                     LevelOrderTraversal::new(self.get_self().unwrap(), start_level, end_level)
                 }
             }

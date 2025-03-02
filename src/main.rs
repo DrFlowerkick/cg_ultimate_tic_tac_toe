@@ -359,7 +359,7 @@ impl MonteCarloGameData for UltTTT {
 }
 
 macro_rules! parse_input {
-    ($x:expr, $t:ident) => {
+    ($x:expr_2021, $t:ident) => {
         $x.trim().parse::<$t>().unwrap()
     };
 }
