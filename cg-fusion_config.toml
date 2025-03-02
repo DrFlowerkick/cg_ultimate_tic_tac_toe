@@ -1,0 +1,185 @@
+# impl config file in TOML format to configure impl items of specific impl blocks to
+# include in or exclude from challenge.
+# file structure:
+# [impl_items]
+# include = [include_item_1, include_item_2]
+# exclude = [exclude_item_1, exclude_item_2]
+# [impl_blocks]
+# include = [include_impl_block_1, include_impl_block_2]
+# exclude = [exclude_impl_block_1, exclude_impl_block_2]
+#
+# If in conflict with other impl options (item or block), the 'include' option always wins.
+#
+# --- impl items of impl blocks ---
+# impl items are identified by their plain name, e.g.
+# fn my_function() --> my_function
+# const MY_CONST --> MY_CONST
+# If the name of the impl item is ambiguous (e.g. push(), next(), etc.), add the fully
+# qualified name of the impl block containing the impl item. Use the following naming
+# schema:
+# impl_item_name@fully_qualified_name_of_impl_block
+#
+# A fully qualified name of an impl block consists of up to four components:
+# 1. impl with lifetime and type parameters if applicable, e.g. impl<'a, T: Display>
+# 2. if impl with a trait, than path to trait with lifetime and type parameters if applicable and 'for' keyword, e.g.
+#    convert::From<&str> for
+# 3. path to user defined type with lifetime and type parameters if applicable referenced by impl
+#    block, e.g. map::TwoDim<X, Y>
+# 4. if impl has a where clause, than where clause for type parameters, e.g. where D: Display
+#
+# Specify the components without any whitespace with the exception of one space between trait and
+# 'for' keyword. The components are separated each by one space.
+# Example 1: impl<constX:usize,constY:usize> map::TwoDim<X,Y>
+# Example 2: impl<'a> From<&'astr> for FooType<'a>
+# Example 3: impl<D> MyPrint for MyType<D> whereD:Display
+#
+# Usage of wildcard '*' for impl item name is possible, but requires a fully qualified name of an
+# impl block, e.g.: *@impl StructFoo
+# This will include all impl items of the corresponding impl block(s)
+#
+# --- impl block ---
+# cg-fusion uses a simple approach to identify required items of src code, which is in most cases not
+# capable of identifying dependencies on traits like Display or From. To include these traits in the
+# fusion of challenge, add all required impl blocks by their fully qualified name (see above) to the
+# configuration. If an impl block with a trait is included, than all items of the impl block will be
+# required by fusion of challenge.
+# If you configure an impl block without a trait, the impl items of this block will be added to the
+# impl user dialog. If you want to avoid this dialog, add the required impl items with the above impl
+# item include options to the configuration. In this case you do not need to add the corresponding
+# impl block to the configuration, because every impl block, which contains required items, will be
+# pulled into the fusion automatically.
+[impl_items]
+include = [
+    "add_child",
+    "add_child_to_parent",
+    "add_unambiguous_child",
+    "add_unambiguous_child_to_parent",
+    "apply_action",
+    "apply_game_data_update@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
+    "apply_player_action",
+    "calc_heuristic@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
+    "calc_heuristic_",
+    "calc_node_score",
+    "calc_simulation_score",
+    "check_game_ending@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
+    "check_game_turn",
+    "choose_and_execute_actions",
+    "clear_children",
+    "clear_parent",
+    "count_player_cells",
+    "execute_action@impl UltTTTPlayerAction",
+    "expand_tree",
+    "expansion",
+    "forward_x",
+    "get@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "get_cell_value",
+    "get_child",
+    "get_child_by_id",
+    "get_first_vacant_cell",
+    "get_id",
+    "get_level",
+    "get_max_level@impl<N:PartialEq> TreeNode<N>",
+    "get_min_level",
+    "get_mut@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "get_mut_value",
+    "get_node@impl<N:PartialEq> TreeNode<N>",
+    "get_parent@impl<N:PartialEq> TreeNode<N>",
+    "get_parent_by_id",
+    "get_root",
+    "get_value@impl<N:PartialEq> TreeNode<N>",
+    "increment_target_level",
+    "init_root",
+    "insert_child",
+    "insert_child_at_parent",
+    "insert_unambiguous_child",
+    "insert_unambiguous_child_at_parent",
+    "is_leave",
+    "is_not_vacant",
+    "is_player",
+    "is_root",
+    "is_vacant",
+    "iter@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "iter_back_track",
+    "iter_children",
+    "iter_column@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "iter_level_order_traversal@impl<N:PartialEq> TreeNode<N>",
+    "iter_level_order_traversal_with_borders",
+    "iter_map",
+    "iter_mut@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "iter_parents",
+    "iter_post_order_traversal@impl<N:PartialEq> TreeNode<N>",
+    "iter_pre_order_traversal@impl<N:PartialEq> TreeNode<N>",
+    "iter_row@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "iter_self",
+    "len_children",
+    "len_parents",
+    "link_child_to_parent",
+    "new@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
+    "new@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloTreeSearch<G,A,U>",
+    "new@impl<N:PartialEq> BackTrack<N>",
+    "new@impl<N:PartialEq> IterChildren<N>",
+    "new@impl<N:PartialEq> IterParents<N>",
+    "new@impl<N:PartialEq> IterSelf<N>",
+    "new@impl<N:PartialEq> LevelOrderTraversal<N>",
+    "new@impl<N:PartialEq> PostOrderTraversal<N>",
+    "new@impl<N:PartialEq> PreOrderTraversal<N>",
+    "new@impl<N:PartialEq> TreeNode<N>",
+    "new_game_data_update_child",
+    "new_player_action_child",
+    "next_player",
+    "node_data_of_root_children",
+    "one_cycle",
+    "propagation",
+    "remove_inconsistent_children",
+    "reserve_children",
+    "reverse_propagation",
+    "score_simulation_result",
+    "seed_root",
+    "selection",
+    "set_all_to_status",
+    "set_next_node",
+    "set_player",
+    "set_tie",
+    "simulation",
+    "sort_children_by",
+    "split_off_children",
+    "swap_remove_child",
+    "swap_value",
+    "update_consistent_node_during_init_phase",
+    "update_exploration_score",
+    "x",
+    "y"
+]
+exclude = [
+    "iter_diagonal_top_left@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "iter_diagonal_top_right@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>"
+]
+[impl_blocks]
+include = [
+    "impl MonteCarloGameData for UltTTT",
+    "impl MonteCarloGameDataUpdate for UltTTTGameDataUpdate",
+    "impl<'a> Iterator for IterUltTTT<'a>",
+    "impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> Default for MonteCarloNode<G,A,U>",
+    "impl<N:PartialEq+Copy+Clone> ExactSizeIterator for IterChildren<N>",
+    "impl<N:PartialEq+Copy+Clone> ExactSizeIterator for IterParents<N>",
+    "impl<N:PartialEq> Iterator for BackTrack<N>",
+    "impl<N:PartialEq> Iterator for IterChildren<N>",
+    "impl<N:PartialEq> Iterator for IterParents<N>",
+    "impl<N:PartialEq> Iterator for IterSelf<N>",
+    "impl<N:PartialEq> Iterator for LevelOrderTraversal<N>",
+    "impl<N:PartialEq> Iterator for PostOrderTraversal<N>",
+    "impl<N:PartialEq> Iterator for PreOrderTraversal<N>",
+    "impl<N:PartialEq> TreeNode<N>",
+    "impl<T:Copy+Clone+Default,constX:usize,constY:usize> Default for MyMap2D<T,X,Y>",
+    "impl<constX:usize,constY:usize> From<(usize,usize)> for MapPoint<X,Y>",
+    "impl<constX:usize,constY:usize> PartialOrd for MapPoint<X,Y>"
+]
+exclude = [
+    "impl std::fmt::Display for TicTacToeGameData",
+    "impl std::fmt::Display for TicTacToeStatus",
+    "impl<T:Copy+Clone+Default+Display,constX:usize,constY:usize> Display for MyMap2D<T,X,Y>",
+    "impl<T:Copy+Clone+Default+From<char>,constX:usize,constY:usize> From<&str> for MyMap2D<T,X,Y>",
+    "impl<constX:usize,constY:usize> Display for MapPoint<X,Y>",
+    "impl<constX:usize,constY:usize> From<MapPoint<X,Y>> for (usize,usize)",
+    "impl<constX:usize,constY:usize> TryFrom<Point> for MapPoint<X,Y>"
+]
