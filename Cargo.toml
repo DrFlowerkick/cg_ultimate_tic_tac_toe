@@ -2,9 +2,10 @@
 name = "cg_ultimate_tic_tac_toe"
 version = "0.2.0"
 edition = "2021"
+rust-version = "1.70"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 rand = "0.8.5"
-my_lib = { path = "../../mylib" }
+my_lib = { path = "../../mylib/" }
