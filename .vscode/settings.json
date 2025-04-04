@@ -4,7 +4,11 @@
         "mylib",
         "usize"
     ],
-    "rust-analyzer.server.path": "C:\\Users\\User\\.cargo\\bin\\rust-analyzer.exe",
+    // windows
+    "[windows]": {
+      "rust-analyzer.server.path": "C:\\Users\\User\\.cargo\\bin\\rust-analyzer.exe"
+    },
+    "rust-analyzer.server.path": "/home/marc/.rustup/toolchains/1.70.0-x86_64-unknown-linux-gnu/bin/rust-analyzer",
     "rust-analyzer.rustc.overrideCommand": [
         "rustup", "run", "1.70.0", "rustc"
     ]
