@@ -1,7 +1,199 @@
-use std::cmp::Ordering;
-use std::fmt::Write;
 use std::io;
 use std::time::Duration;
+macro_rules! parse_input {
+    ($ x : expr , $ t : ident) => {
+        $x.trim().parse::<$t>().unwrap()
+    };
+}
+fn main() {
+    let mut turn_counter: usize = 1;
+    let mut starting_player = MonteCarloPlayer::Me;
+    let mut game_data = UltTTT::new();
+    let game_mode = MonteCarloGameMode::ByTurns;
+    let max_number_of_turns = 81;
+    let force_update = true;
+    let time_out_first_turn = Duration::from_millis(995);
+    let time_out_successive_turns = Duration::from_millis(95);
+    let weighting_factor = 1.4;
+    let use_heuristic_score = false;
+    let use_caching = false;
+    let debug = true;
+    let mut mcts: MonteCarloTreeSearch<UltTTT, UltTTTPlayerAction, UltTTTGameDataUpdate> =
+        MonteCarloTreeSearch::new(
+            game_mode,
+            max_number_of_turns,
+            force_update,
+            time_out_first_turn,
+            time_out_successive_turns,
+            weighting_factor,
+            use_heuristic_score,
+            use_caching,
+            debug,
+        );
+    loop {
+        let mut input_line = String::new();
+        io::stdin().read_line(&mut input_line).unwrap();
+        let inputs = input_line.split(' ').collect::<Vec<_>>();
+        let opponent_row = parse_input!(inputs[0], i32);
+        let opponent_col = parse_input!(inputs[1], i32);
+        let mut input_line = String::new();
+        io::stdin().read_line(&mut input_line).unwrap();
+        let valid_action_count = parse_input!(input_line, i32);
+        for _i in 0..valid_action_count as usize {
+            let mut input_line = String::new();
+            io::stdin().read_line(&mut input_line).unwrap();
+            let inputs = input_line.split(' ').collect::<Vec<_>>();
+            let _row = parse_input!(inputs[0], i32);
+            let _col = parse_input!(inputs[1], i32);
+        }
+        if turn_counter == 1 {
+            if opponent_row >= 0 {
+                starting_player = MonteCarloPlayer::Opp;
+                turn_counter += 1;
+                let opp_action =
+                    MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
+                game_data.set_last_opp_action(opp_action);
+            }
+        } else {
+            let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
+            game_data.set_last_opp_action(opp_action);
+        }
+        let start = mcts.init_root(&game_data, starting_player);
+        mcts.expand_tree(start);
+        let (_my_game_data, my_action) = mcts.choose_and_execute_actions();
+        my_action.execute_action();
+        turn_counter += 2;
+    }
+}
+mod impl_monte_carlo_traits {
+    use super::IterUltTTT;
+    use super::MonteCarloGameData;
+    use super::MonteCarloGameDataUpdate;
+    use super::MonteCarloPlayer;
+    use super::MonteCarloPlayerAction;
+    use super::TicTacToeStatus;
+    use super::UltTTT;
+    use super::UltTTTGameDataUpdate;
+    use super::UltTTTPlayerAction;
+    impl MonteCarloPlayerAction for UltTTTPlayerAction {
+        fn downcast_self(player_action: &impl MonteCarloPlayerAction) -> &Self {
+            match player_action.as_any().downcast_ref::<Self>() {
+                Some(ult_ttt_pa) => ult_ttt_pa,
+                None => panic!("player_action is not of type UltTTT_PlayerAction!"),
+            }
+        }
+        fn iter_actions(
+            game_data: &impl MonteCarloGameData,
+            player: MonteCarloPlayer,
+            parent_game_turn: usize,
+        ) -> Box<dyn Iterator<Item = Self> + '_> {
+            let game_data = UltTTT::downcast_self(game_data);
+            Box::new(IterUltTTT::new(game_data, player, parent_game_turn))
+        }
+    }
+    impl MonteCarloGameDataUpdate for UltTTTGameDataUpdate {
+        fn downcast_self(_game_data_update: &impl MonteCarloGameDataUpdate) -> &Self {
+            &UltTTTGameDataUpdate {}
+        }
+        fn iter_game_data_updates(
+            _game_data: &impl MonteCarloGameData,
+            _force_update: bool,
+        ) -> Box<dyn Iterator<Item = Self> + '_> {
+            Box::new(vec![].into_iter())
+        }
+    }
+    impl MonteCarloGameData for UltTTT {
+        fn downcast_self(game_data: &impl MonteCarloGameData) -> &Self {
+            match game_data.as_any().downcast_ref::<Self>() {
+                Some(ult_ttt) => ult_ttt,
+                None => panic!("&game_data is not of type UltTTT!"),
+            }
+        }
+        fn apply_my_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
+            let my_action = *UltTTTPlayerAction::downcast_self(player_action);
+            self.execute_player_action(my_action, MonteCarloPlayer::Me)
+                .is_not_vacant()
+                || self
+                    .status_map
+                    .get_cell_value(my_action.ult_ttt_big)
+                    .is_player()
+        }
+        fn apply_opp_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
+            let opp_action = *UltTTTPlayerAction::downcast_self(player_action);
+            self.execute_player_action(opp_action, MonteCarloPlayer::Opp)
+                .is_not_vacant()
+                || self
+                    .status_map
+                    .get_cell_value(opp_action.ult_ttt_big)
+                    .is_player()
+        }
+        fn simultaneous_player_actions_for_simultaneous_game_data_change(
+            &mut self,
+            _my_action: &impl MonteCarloPlayerAction,
+            _opp_action: &impl MonteCarloPlayerAction,
+        ) {
+        }
+        fn apply_game_data_update(
+            &mut self,
+            _game_data_update: &impl MonteCarloGameDataUpdate,
+            _check_update_consistency: bool,
+        ) -> bool {
+            false
+        }
+        fn is_game_data_update_required(&self, _force_update: bool) -> bool {
+            false
+        }
+        fn calc_heuristic(&self) -> f32 {
+            self.status_map.calc_heuristic_() * 10.0
+                + self
+                    .status_map
+                    .iter_map()
+                    .map(|(_, s)| match s {
+                        TicTacToeStatus::Player(player) => match player {
+                            MonteCarloPlayer::Me => 1.0,
+                            MonteCarloPlayer::Opp => -1.0,
+                        },
+                        _ => 0.0,
+                    })
+                    .sum::<f32>()
+        }
+        fn check_game_ending(&self, _game_turn: usize) -> bool {
+            self.status.is_not_vacant()
+        }
+        fn game_winner(&self, _game_turn: usize) -> Option<MonteCarloPlayer> {
+            match self.status {
+                TicTacToeStatus::Player(player) => Some(player),
+                _ => None,
+            }
+        }
+        fn check_consistency_of_game_data_during_init_root(
+            &mut self,
+            _current_game_state: &Self,
+            _played_turns: usize,
+        ) -> bool {
+            true
+        }
+        fn check_consistency_of_game_data_update(
+            &mut self,
+            _current_game_state: &Self,
+            _game_data_update: &impl MonteCarloGameDataUpdate,
+            _played_turns: usize,
+        ) -> bool {
+            true
+        }
+        fn check_consistency_of_action_result(
+            &mut self,
+            _current_game_state: Self,
+            _my_action: &impl MonteCarloPlayerAction,
+            _opp_action: &impl MonteCarloPlayerAction,
+            _played_turns: usize,
+            _apply_player_actions_to_game_data: bool,
+        ) -> bool {
+            true
+        }
+    }
+}
+use std::fmt::Write;
 const U: usize = 9;
 const V: usize = U;
 struct IterUltTTT<'a> {
@@ -26,7 +218,7 @@ impl<'a> IterUltTTT<'a> {
             result.player_action.ult_ttt_big = next_ult_ttt_big;
             result.player_action.ult_ttt_small = ult_ttt_data
                 .map
-                .get(result.player_action.ult_ttt_big)
+                .get(next_ult_ttt_big)
                 .get_first_vacant_cell()
                 .unwrap()
                 .0;
@@ -148,35 +340,8 @@ impl UltTTTPlayerAction {
         action_commando_string
     }
 }
-impl MonteCarloPlayerAction for UltTTTPlayerAction {
-    fn downcast_self(player_action: &impl MonteCarloPlayerAction) -> &Self {
-        match player_action.as_any().downcast_ref::<Self>() {
-            Some(ult_ttt_pa) => ult_ttt_pa,
-            None => panic!("player_action is not of type UltTTT_PlayerAction!"),
-        }
-    }
-    fn iter_actions(
-        game_data: &impl MonteCarloGameData,
-        player: MonteCarloPlayer,
-        parent_game_turn: usize,
-    ) -> Box<dyn Iterator<Item = Self> + '_> {
-        let game_data = UltTTT::downcast_self(game_data);
-        Box::new(IterUltTTT::new(game_data, player, parent_game_turn))
-    }
-}
 #[derive(Copy, Clone, PartialEq, Default)]
 struct UltTTTGameDataUpdate {}
-impl MonteCarloGameDataUpdate for UltTTTGameDataUpdate {
-    fn downcast_self(_game_data_update: &impl MonteCarloGameDataUpdate) -> &Self {
-        &UltTTTGameDataUpdate {}
-    }
-    fn iter_game_data_updates(
-        _game_data: &impl MonteCarloGameData,
-        _force_update: bool,
-    ) -> Box<dyn Iterator<Item = Self> + '_> {
-        Box::new(vec![].into_iter())
-    }
-}
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default)]
 struct UltTTT {
     map: MyMap2D<TicTacToeGameData, X, Y>,
@@ -225,173 +390,21 @@ impl UltTTT {
                 Ordering::Less => TicTacToeStatus::Player(MonteCarloPlayer::Opp),
                 Ordering::Equal => TicTacToeStatus::Tie,
             };
-        }
-        self.next_action_square_is_specified =
-            if self.status_map.get_cell_value(player_action.ult_ttt_small)
-                == TicTacToeStatus::Vacant
+        } else {
+            self.next_action_square_is_specified = if self
+                .status_map
+                .get_cell_value(player_action.ult_ttt_small)
+                .is_vacant()
             {
                 Some(player_action.ult_ttt_small)
             } else {
                 None
             };
+        }
         self.status
     }
 }
-impl MonteCarloGameData for UltTTT {
-    fn downcast_self(game_data: &impl MonteCarloGameData) -> &Self {
-        match game_data.as_any().downcast_ref::<Self>() {
-            Some(ult_ttt) => ult_ttt,
-            None => panic!("&game_data is not of type UltTTT!"),
-        }
-    }
-    fn apply_my_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
-        let my_action = *UltTTTPlayerAction::downcast_self(player_action);
-        self.execute_player_action(my_action, MonteCarloPlayer::Me)
-            .is_not_vacant()
-            || self
-                .status_map
-                .get_cell_value(my_action.ult_ttt_big)
-                .is_player()
-    }
-    fn apply_opp_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
-        let opp_action = *UltTTTPlayerAction::downcast_self(player_action);
-        self.execute_player_action(opp_action, MonteCarloPlayer::Opp)
-            .is_not_vacant()
-            || self
-                .status_map
-                .get_cell_value(opp_action.ult_ttt_big)
-                .is_player()
-    }
-    fn simultaneous_player_actions_for_simultaneous_game_data_change(
-        &mut self,
-        _my_action: &impl MonteCarloPlayerAction,
-        _opp_action: &impl MonteCarloPlayerAction,
-    ) {
-    }
-    fn apply_game_data_update(
-        &mut self,
-        _game_data_update: &impl MonteCarloGameDataUpdate,
-        _check_update_consistency: bool,
-    ) -> bool {
-        false
-    }
-    fn is_game_data_update_required(&self, _force_update: bool) -> bool {
-        false
-    }
-    fn calc_heuristic(&self) -> f32 {
-        self.status_map.calc_heuristic_() * 10.0
-            + self
-                .status_map
-                .iter_map()
-                .map(|(_, s)| match s {
-                    TicTacToeStatus::Player(player) => match player {
-                        MonteCarloPlayer::Me => 1.0,
-                        MonteCarloPlayer::Opp => -1.0,
-                    },
-                    _ => 0.0,
-                })
-                .sum::<f32>()
-    }
-    fn check_game_ending(&self, _game_turn: usize) -> bool {
-        self.status.is_not_vacant()
-    }
-    fn game_winner(&self, _game_turn: usize) -> Option<MonteCarloPlayer> {
-        match self.status {
-            TicTacToeStatus::Player(player) => Some(player),
-            _ => None,
-        }
-    }
-    fn check_consistency_of_game_data_during_init_root(
-        &mut self,
-        _current_game_state: &Self,
-        _played_turns: usize,
-    ) -> bool {
-        true
-    }
-    fn check_consistency_of_game_data_update(
-        &mut self,
-        _current_game_state: &Self,
-        _game_data_update: &impl MonteCarloGameDataUpdate,
-        _played_turns: usize,
-    ) -> bool {
-        true
-    }
-    fn check_consistency_of_action_result(
-        &mut self,
-        _current_game_state: Self,
-        _my_action: &impl MonteCarloPlayerAction,
-        _opp_action: &impl MonteCarloPlayerAction,
-        _played_turns: usize,
-        _apply_player_actions_to_game_data: bool,
-    ) -> bool {
-        true
-    }
-}
-macro_rules! parse_input {
-    ($ x : expr , $ t : ident) => {
-        $x.trim().parse::<$t>().unwrap()
-    };
-}
-fn main() {
-    let mut turn_counter: usize = 1;
-    let mut starting_player = MonteCarloPlayer::Me;
-    let mut game_data = UltTTT::new();
-    let game_mode = MonteCarloGameMode::ByTurns;
-    let max_number_of_turns = 81;
-    let force_update = true;
-    let time_out_first_turn = Duration::from_millis(995);
-    let time_out_successive_turns = Duration::from_millis(95);
-    let weighting_factor = 1.4;
-    let use_heuristic_score = false;
-    let use_caching = false;
-    let debug = true;
-    let mut mcts: MonteCarloTreeSearch<UltTTT, UltTTTPlayerAction, UltTTTGameDataUpdate> =
-        MonteCarloTreeSearch::new(
-            game_mode,
-            max_number_of_turns,
-            force_update,
-            time_out_first_turn,
-            time_out_successive_turns,
-            weighting_factor,
-            use_heuristic_score,
-            use_caching,
-            debug,
-        );
-    loop {
-        let mut input_line = String::new();
-        io::stdin().read_line(&mut input_line).unwrap();
-        let inputs = input_line.split(' ').collect::<Vec<_>>();
-        let opponent_row = parse_input!(inputs[0], i32);
-        let opponent_col = parse_input!(inputs[1], i32);
-        let mut input_line = String::new();
-        io::stdin().read_line(&mut input_line).unwrap();
-        let valid_action_count = parse_input!(input_line, i32);
-        for _i in 0..valid_action_count as usize {
-            let mut input_line = String::new();
-            io::stdin().read_line(&mut input_line).unwrap();
-            let inputs = input_line.split(' ').collect::<Vec<_>>();
-            let _row = parse_input!(inputs[0], i32);
-            let _col = parse_input!(inputs[1], i32);
-        }
-        if turn_counter == 1 {
-            if opponent_row >= 0 {
-                starting_player = MonteCarloPlayer::Opp;
-                turn_counter += 1;
-                let opp_action =
-                    MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-                game_data.set_last_opp_action(opp_action);
-            }
-        } else {
-            let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-            game_data.set_last_opp_action(opp_action);
-        }
-        let start = mcts.init_root(&game_data, starting_player);
-        mcts.expand_tree(start);
-        let (_my_game_data, my_action) = mcts.choose_and_execute_actions();
-        my_action.execute_action();
-        turn_counter += 2;
-    }
-}
+use std::cmp::Ordering;
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Default, Hash)]
 struct MapPoint<const X: usize, const Y: usize> {
     x: usize,
@@ -503,13 +516,6 @@ impl<T: Copy + Clone + Default, const X: usize, const Y: usize> MyMap2D<T, X, Y>
                 .map(move |(x, column)| (MapPoint::<X, Y>::new(x, y), column))
         })
     }
-    fn iter_mut(&mut self) -> impl Iterator<Item = (MapPoint<X, Y>, &mut T)> {
-        self.items.iter_mut().enumerate().flat_map(|(y, row)| {
-            row.iter_mut()
-                .enumerate()
-                .map(move |(x, column)| (MapPoint::<X, Y>::new(x, y), column))
-        })
-    }
     fn iter_row(&self, r: usize) -> impl Iterator<Item = (MapPoint<X, Y>, &T)> {
         self.get_row(r)
             .iter()
@@ -533,8 +539,9 @@ impl<T: Copy + Clone + Default, const X: usize, const Y: usize> Default for MyMa
         Self::new()
     }
 }
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 enum MonteCarloPlayer {
+    #[default]
     Me,
     Opp,
 }
@@ -1333,6 +1340,153 @@ impl<G: MonteCarloGameData, A: MonteCarloPlayerAction, U: MonteCarloGameDataUpda
         false
     }
 }
+use rand::seq::IteratorRandom;
+#[derive(Copy, Clone, PartialEq, Default)]
+struct TicTacToePlayerAction {
+    cell: MapPoint<X, Y>,
+}
+impl MonteCarloPlayerAction for TicTacToePlayerAction {
+    fn downcast_self(player_action: &impl MonteCarloPlayerAction) -> &Self {
+        match player_action.as_any().downcast_ref::<Self>() {
+            Some(ttt_pa) => ttt_pa,
+            None => panic!("player_action is not of type TicTacToePlayerAction!"),
+        }
+    }
+    fn iter_actions(
+        game_data: &impl MonteCarloGameData,
+        _player: MonteCarloPlayer,
+        _parent_game_turn: usize,
+    ) -> Box<dyn Iterator<Item = Self> + '_> {
+        let game_data = TicTacToeGameData::downcast_self(game_data);
+        Box::new(IterTicTacToePlayerAction::new(game_data))
+    }
+}
+struct IterTicTacToePlayerAction<'a> {
+    ttt_data: &'a TicTacToeGameData,
+    iter_action: TicTacToePlayerAction,
+    iter_finished: bool,
+}
+impl<'a> IterTicTacToePlayerAction<'a> {
+    fn new(ttt_data: &'a TicTacToeGameData) -> Self {
+        let mut result = IterTicTacToePlayerAction {
+            ttt_data,
+            iter_action: TicTacToePlayerAction::default(),
+            iter_finished: false,
+        };
+        match result.ttt_data.map.iter().find(|(_, v)| v.is_vacant()) {
+            Some((start_point, _)) => result.iter_action.cell = start_point,
+            None => result.iter_finished = true,
+        };
+        result
+    }
+}
+impl Iterator for IterTicTacToePlayerAction<'_> {
+    type Item = TicTacToePlayerAction;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.iter_finished {
+            return None;
+        }
+        let result = self.iter_action;
+        let mut searching_new_action = true;
+        while searching_new_action {
+            match self.iter_action.cell.forward_x() {
+                Some(new_cell) => {
+                    self.iter_action.cell = new_cell;
+                    searching_new_action = self.ttt_data.map.get(new_cell).is_not_vacant();
+                }
+                None => {
+                    self.iter_finished = true;
+                    searching_new_action = false;
+                }
+            }
+        }
+        Some(result)
+    }
+}
+#[derive(Copy, Clone, PartialEq, Default)]
+struct TicTacToeGameDataUpdate {}
+impl MonteCarloGameDataUpdate for TicTacToeGameDataUpdate {
+    fn downcast_self(_game_data_update: &impl MonteCarloGameDataUpdate) -> &Self {
+        &TicTacToeGameDataUpdate {}
+    }
+    fn iter_game_data_updates(
+        _game_data: &impl MonteCarloGameData,
+        _force_update: bool,
+    ) -> Box<dyn Iterator<Item = Self> + '_> {
+        Box::new(vec![].into_iter())
+    }
+}
+impl MonteCarloGameData for TicTacToeGameData {
+    fn downcast_self(game_data: &impl MonteCarloGameData) -> &Self {
+        match game_data.as_any().downcast_ref::<Self>() {
+            Some(ttt_gd) => ttt_gd,
+            None => panic!("game_data is not of type TicTacToeGameData!"),
+        }
+    }
+    fn apply_my_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
+        let player_action = TicTacToePlayerAction::downcast_self(player_action);
+        self.set_player(player_action.cell, MonteCarloPlayer::Me);
+        true
+    }
+    fn apply_opp_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
+        let player_action = TicTacToePlayerAction::downcast_self(player_action);
+        self.set_player(player_action.cell, MonteCarloPlayer::Opp);
+        true
+    }
+    fn simultaneous_player_actions_for_simultaneous_game_data_change(
+        &mut self,
+        _my_action: &impl MonteCarloPlayerAction,
+        _opp_action: &impl MonteCarloPlayerAction,
+    ) {
+    }
+    fn is_game_data_update_required(&self, _force_update: bool) -> bool {
+        false
+    }
+    fn apply_game_data_update(
+        &mut self,
+        _game_data_update: &impl MonteCarloGameDataUpdate,
+        _check_update_consistency: bool,
+    ) -> bool {
+        true
+    }
+    fn calc_heuristic(&self) -> f32 {
+        self.calc_heuristic_()
+    }
+    fn check_game_ending(&self, _game_turn: usize) -> bool {
+        self.status.is_not_vacant()
+    }
+    fn game_winner(&self, _game_turn: usize) -> Option<MonteCarloPlayer> {
+        match self.status {
+            TicTacToeStatus::Player(player) => Some(player),
+            _ => None,
+        }
+    }
+    fn check_consistency_of_game_data_during_init_root(
+        &mut self,
+        _current_game_state: &Self,
+        _played_turns: usize,
+    ) -> bool {
+        true
+    }
+    fn check_consistency_of_game_data_update(
+        &mut self,
+        _current_game_state: &Self,
+        _game_data_update: &impl MonteCarloGameDataUpdate,
+        _played_turns: usize,
+    ) -> bool {
+        true
+    }
+    fn check_consistency_of_action_result(
+        &mut self,
+        _current_game_state: Self,
+        _my_action: &impl MonteCarloPlayerAction,
+        _opp_action: &impl MonteCarloPlayerAction,
+        _played_turns: usize,
+        _apply_player_actions_to_game_data: bool,
+    ) -> bool {
+        true
+    }
+}
 const X: usize = 3;
 const Y: usize = X;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -1360,6 +1514,7 @@ struct TicTacToeGameData {
     num_me_cells: u8,
     num_opp_cells: u8,
     num_tie_cells: u8,
+    current_player: MonteCarloPlayer,
 }
 impl TicTacToeGameData {
     fn new() -> Self {
@@ -1369,6 +1524,7 @@ impl TicTacToeGameData {
             num_me_cells: 0,
             num_opp_cells: 0,
             num_tie_cells: 0,
+            current_player: MonteCarloPlayer::Me,
         }
     }
     fn check_status_for_one_line<'a>(
@@ -1388,7 +1544,13 @@ impl TicTacToeGameData {
         }
         winner
     }
-    fn check_status(&mut self, cell: MapPoint<X, Y>, check_lines: bool) -> TicTacToeStatus {
+    fn check_status(&mut self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
+        let check_lines = match self.map.get(cell) {
+            TicTacToeStatus::Vacant => false,
+            TicTacToeStatus::Player(MonteCarloPlayer::Me) => self.num_me_cells > 2,
+            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => self.num_opp_cells > 2,
+            TicTacToeStatus::Tie => false,
+        };
         if check_lines {
             if let TicTacToeStatus::Player(player) =
                 self.check_status_for_one_line(self.map.iter_row(cell.y()).map(|(_, v)| v))
@@ -1426,13 +1588,13 @@ impl TicTacToeGameData {
     }
     fn iter_diagonal_top_left(&self) -> impl Iterator<Item = &'_ TicTacToeStatus> {
         [(0_usize, 0_usize), (1, 1), (2, 2)]
-            .into_iter()
-            .map(|p| self.map.get(p.into()))
+            .iter()
+            .map(move |p| self.map.get((*p).into()))
     }
     fn iter_diagonal_top_right(&self) -> impl Iterator<Item = &'_ TicTacToeStatus> {
         [(2_usize, 0_usize), (1, 1), (0, 2)]
-            .into_iter()
-            .map(|p| self.map.get(p.into()))
+            .iter()
+            .map(move |p| self.map.get((*p).into()))
     }
     fn calc_line_heuristic<'a>(&self, line: impl Iterator<Item = &'a TicTacToeStatus>) -> f32 {
         let mut count: u8 = 0;
@@ -1480,24 +1642,23 @@ impl TicTacToeGameData {
         heuristic
     }
     fn set_player(&mut self, cell: MapPoint<X, Y>, player: MonteCarloPlayer) -> TicTacToeStatus {
-        let check_lines = match player {
+        match player {
             MonteCarloPlayer::Me => {
                 self.num_me_cells += 1;
-                self.num_me_cells > 2
             }
             MonteCarloPlayer::Opp => {
                 self.num_opp_cells += 1;
-                self.num_opp_cells > 2
             }
-        };
+        }
         if self
             .map
             .swap_value(cell, TicTacToeStatus::Player(player))
             .is_not_vacant()
         {
+            dbg!(self.map.get(cell));
             panic!("Set player on not vacant cell.");
         }
-        self.check_status(cell, check_lines)
+        self.check_status(cell)
     }
     fn set_tie(&mut self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
         self.num_tie_cells += 1;
@@ -1508,12 +1669,10 @@ impl TicTacToeGameData {
         {
             panic!("Set tie on not vacant cell.");
         }
-        self.check_status(cell, false)
+        self.check_status(cell)
     }
     fn set_all_to_status(&mut self) -> TicTacToeStatus {
-        for (_, cell) in self.map.iter_mut() {
-            *cell = self.status;
-        }
+        self.map = MyMap2D::init(self.status);
         self.status
     }
     fn get_cell_value(&self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
@@ -1763,11 +1922,7 @@ impl<N: PartialEq> TreeNode<N> {
                 let new_level = p.get_level() + 1;
                 let mut current_max_level = (*p.max_level).borrow_mut();
                 *current_max_level = current_max_level.max(new_level);
-                (
-                    new_level,
-                    p.max_level.clone(),
-                    RefCell::new(vec![parent.clone()]),
-                )
+                (new_level, p.max_level.clone(), RefCell::new(vec![parent]))
             }
             None => (
                 0,

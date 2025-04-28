@@ -50,10 +50,10 @@
 # pulled into the fusion automatically.
 [impl_items]
 include = [
-    "add_child",
+    "add_child@impl<N:PartialEq> TreeNode<N>",
     "apply_action",
     "apply_game_data_update@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
-    "calc_heuristic_",
+    "calc_heuristic@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
     "calc_node_score",
     "calc_simulation_score",
     "check_game_ending@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
@@ -61,6 +61,7 @@ include = [
     "clear_children",
     "count_player_cells",
     "execute_action@impl UltTTTPlayerAction",
+    "execute_player_action",
     "expand_tree",
     "forward_x",
     "get@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
@@ -86,12 +87,13 @@ include = [
     "iter_column@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "iter_level_order_traversal_with_borders",
     "iter_map",
-    "iter_mut@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "iter_parents",
     "iter_row@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "len_children",
     "len_parents",
     "link_child_to_parent",
+    "new@impl TicTacToeGameData",
+    "new@impl UltTTT",
     "new@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
     "new@impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloTreeSearch<G,A,U>",
     "new@impl<N:PartialEq> BackTrack<N>",
@@ -99,14 +101,15 @@ include = [
     "new@impl<N:PartialEq> IterParents<N>",
     "new@impl<N:PartialEq> LevelOrderTraversal<N>",
     "new@impl<N:PartialEq> TreeNode<N>",
+    "new@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "new_game_data_update_child",
     "new_player_action_child",
-    "next_player",
+    "next_player@impl MonteCarloPlayer",
     "score_simulation_result",
     "seed_root",
     "set_all_to_status",
+    "set_last_opp_action",
     "set_next_node",
-    "set_player",
     "set_tie",
     "split_off_children",
     "swap_remove_child",
@@ -116,15 +119,23 @@ include = [
     "y"
 ]
 exclude = [
+    "execute_action@impl TicTacToePlayerAction",
     "iter_diagonal_top_left@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
-    "iter_diagonal_top_right@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>"
+    "iter_diagonal_top_right@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "next_player@impl TicTacToeGameData"
 ]
 [impl_blocks]
 include = [
-    "impl MonteCarloGameData for UltTTT",
+    "impl Iterator for IterTicTacToePlayerAction<'_>",
+    "impl MonteCarloGameData for TicTacToeGameData",
+    "impl MonteCarloGameDataUpdate for TicTacToeGameDataUpdate",
     "impl MonteCarloGameDataUpdate for UltTTTGameDataUpdate",
     "impl MonteCarloPlayer",
+    "impl MonteCarloPlayerAction for UltTTTPlayerAction",
+    "impl TicTacToeGameData",
+    "impl TicTacToePlayerAction",
     "impl TicTacToeStatus",
+    "impl UltTTT",
     "impl<'a> Iterator for IterUltTTT<'a>",
     "impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> Default for MonteCarloNode<G,A,U>",
     "impl<G:MonteCarloGameData,A:MonteCarloPlayerAction,U:MonteCarloGameDataUpdate> MonteCarloNode<G,A,U>",
@@ -151,5 +162,6 @@ exclude = [
     "impl<T:Copy+Clone+Default+From<char>,constX:usize,constY:usize> From<&str> for MyMap2D<T,X,Y>",
     "impl<constX:usize,constY:usize> Display for MapPoint<X,Y>",
     "impl<constX:usize,constY:usize> From<MapPoint<X,Y>> for (usize,usize)",
+    "impl<constX:usize,constY:usize> From<MapPoint<X,Y>> for Point",
     "impl<constX:usize,constY:usize> TryFrom<Point> for MapPoint<X,Y>"
 ]
