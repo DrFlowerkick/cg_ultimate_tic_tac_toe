@@ -1,9 +1,9 @@
 use my_lib::my_map_point::*;
 use my_lib::my_monte_carlo_tree_search::*;
 use std::io;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use cg_ultimate_tic_tac_toe::{UltTTT, UltTTTGameDataUpdate, UltTTTPlayerAction, U, V};
+use cg_ultimate_tic_tac_toe::{UltTTT, UltTTTMCTSGame, UltTTTPlayerAction, U, V};
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -16,30 +16,13 @@ macro_rules! parse_input {
  * the standard input according to the problem statement.
  **/
 fn main() {
-    let mut turn_counter: usize = 1;
-    let mut starting_player = MonteCarloPlayer::Me;
-    let mut game_data = UltTTT::new();
-    let game_mode = MonteCarloGameMode::ByTurns;
     let max_number_of_turns = 81;
-    let force_update = true;
+    let weighting_factor = 1.4;
     let time_out_first_turn = Duration::from_millis(995);
     let time_out_successive_turns = Duration::from_millis(95);
-    let weighting_factor = 1.4;
-    let use_heuristic_score = false;
-    let use_caching = false;
-    let debug = true;
-    let mut mcts: MonteCarloTreeSearch<UltTTT, UltTTTPlayerAction, UltTTTGameDataUpdate> =
-        MonteCarloTreeSearch::new(
-            game_mode,
-            max_number_of_turns,
-            force_update,
-            time_out_first_turn,
-            time_out_successive_turns,
-            weighting_factor,
-            use_heuristic_score,
-            use_caching,
-            debug,
-        );
+    let mut first_turn = true;
+    let mut game_data = UltTTT::new();
+    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame> = TurnBasedMCTS::new(weighting_factor);
     // game loop
     loop {
         let mut input_line = String::new();
@@ -58,29 +41,43 @@ fn main() {
             let _col = parse_input!(inputs[1], i32);
         }
 
-        if turn_counter == 1 {
+        let time_out = if first_turn {
             // check starting_player
             if opponent_row >= 0 {
-                starting_player = MonteCarloPlayer::Opp;
-                turn_counter += 1;
+                game_data.set_current_player(MonteCarloPlayer::Opp);
                 let opp_action =
                     MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-                game_data.set_last_opp_action(opp_action);
+                game_data = UltTTTMCTSGame::apply_move(
+                    &game_data,
+                    &UltTTTPlayerAction::from_ext(opp_action),
+                );
             }
+            time_out_first_turn
         } else {
             // update opp action
             let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-            game_data.set_last_opp_action(opp_action);
-        }
+            game_data =
+                UltTTTMCTSGame::apply_move(&game_data, &UltTTTPlayerAction::from_ext(opp_action));
+            time_out_successive_turns
+        };
 
         // Write an action using println!("message...");
         // To debug: eprintln!("Debug message...");
 
-        let start = mcts.init_root(&game_data, starting_player);
-        mcts.expand_tree(start);
-        let (_my_game_data, my_action) = mcts.choose_and_execute_actions();
-        my_action.execute_action();
+        let start = Instant::now();
+        mcts_ult_ttt.set_root(&game_data);
+        let mut number_of_iterations = 0;
+        while start.elapsed() < time_out {
+            mcts_ult_ttt.iterate();
+            number_of_iterations += 1;
+        }
+        let selected_move = mcts_ult_ttt.select_move();
+        game_data = UltTTTMCTSGame::apply_move(&game_data, &selected_move);
+        selected_move.execute_action();
 
-        turn_counter += 2;
+        eprintln!("Iterations: {}", number_of_iterations);
+
+        first_turn = false;
+        assert!(game_data.game_turn <= max_number_of_turns);
     }
 }

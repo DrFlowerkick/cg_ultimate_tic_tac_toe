@@ -1,35 +1,19 @@
 use std::io;
 use std::time::Duration;
+use std::time::Instant;
 macro_rules! parse_input {
     ($ x : expr , $ t : ident) => {
         $x.trim().parse::<$t>().unwrap()
     };
 }
 fn main() {
-    let mut turn_counter: usize = 1;
-    let mut starting_player = MonteCarloPlayer::Me;
-    let mut game_data = UltTTT::new();
-    let game_mode = MonteCarloGameMode::ByTurns;
     let max_number_of_turns = 81;
-    let force_update = true;
+    let weighting_factor = 1.4;
     let time_out_first_turn = Duration::from_millis(995);
     let time_out_successive_turns = Duration::from_millis(95);
-    let weighting_factor = 1.4;
-    let use_heuristic_score = false;
-    let use_caching = false;
-    let debug = true;
-    let mut mcts: MonteCarloTreeSearch<UltTTT, UltTTTPlayerAction, UltTTTGameDataUpdate> =
-        MonteCarloTreeSearch::new(
-            game_mode,
-            max_number_of_turns,
-            force_update,
-            time_out_first_turn,
-            time_out_successive_turns,
-            weighting_factor,
-            use_heuristic_score,
-            use_caching,
-            debug,
-        );
+    let mut first_turn = true;
+    let mut game_data = UltTTT::new();
+    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame> = TurnBasedMCTS::new(weighting_factor);
     loop {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
@@ -46,151 +30,35 @@ fn main() {
             let _row = parse_input!(inputs[0], i32);
             let _col = parse_input!(inputs[1], i32);
         }
-        if turn_counter == 1 {
+        let time_out = if first_turn {
             if opponent_row >= 0 {
-                starting_player = MonteCarloPlayer::Opp;
-                turn_counter += 1;
+                game_data.set_current_player(MonteCarloPlayer::Opp);
                 let opp_action =
                     MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-                game_data.set_last_opp_action(opp_action);
+                game_data = UltTTTMCTSGame::apply_move(
+                    &game_data,
+                    &UltTTTPlayerAction::from_ext(opp_action),
+                );
             }
+            time_out_first_turn
         } else {
             let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-            game_data.set_last_opp_action(opp_action);
+            game_data =
+                UltTTTMCTSGame::apply_move(&game_data, &UltTTTPlayerAction::from_ext(opp_action));
+            time_out_successive_turns
+        };
+        let start = Instant::now();
+        mcts_ult_ttt.set_root(&game_data);
+        let mut number_of_iterations = 0;
+        while start.elapsed() < time_out {
+            mcts_ult_ttt.iterate();
+            number_of_iterations += 1;
         }
-        let start = mcts.init_root(&game_data, starting_player);
-        mcts.expand_tree(start);
-        let (_my_game_data, my_action) = mcts.choose_and_execute_actions();
-        my_action.execute_action();
-        turn_counter += 2;
-    }
-}
-mod impl_monte_carlo_traits {
-    use super::IterUltTTT;
-    use super::MonteCarloGameData;
-    use super::MonteCarloGameDataUpdate;
-    use super::MonteCarloPlayer;
-    use super::MonteCarloPlayerAction;
-    use super::TicTacToeStatus;
-    use super::UltTTT;
-    use super::UltTTTGameDataUpdate;
-    use super::UltTTTPlayerAction;
-    impl MonteCarloPlayerAction for UltTTTPlayerAction {
-        fn downcast_self(player_action: &impl MonteCarloPlayerAction) -> &Self {
-            match player_action.as_any().downcast_ref::<Self>() {
-                Some(ult_ttt_pa) => ult_ttt_pa,
-                None => panic!("player_action is not of type UltTTT_PlayerAction!"),
-            }
-        }
-        fn iter_actions(
-            game_data: &impl MonteCarloGameData,
-            player: MonteCarloPlayer,
-            parent_game_turn: usize,
-        ) -> Box<dyn Iterator<Item = Self> + '_> {
-            let game_data = UltTTT::downcast_self(game_data);
-            Box::new(IterUltTTT::new(game_data, player, parent_game_turn))
-        }
-    }
-    impl MonteCarloGameDataUpdate for UltTTTGameDataUpdate {
-        fn downcast_self(_game_data_update: &impl MonteCarloGameDataUpdate) -> &Self {
-            &UltTTTGameDataUpdate {}
-        }
-        fn iter_game_data_updates(
-            _game_data: &impl MonteCarloGameData,
-            _force_update: bool,
-        ) -> Box<dyn Iterator<Item = Self> + '_> {
-            Box::new(vec![].into_iter())
-        }
-    }
-    impl MonteCarloGameData for UltTTT {
-        fn downcast_self(game_data: &impl MonteCarloGameData) -> &Self {
-            match game_data.as_any().downcast_ref::<Self>() {
-                Some(ult_ttt) => ult_ttt,
-                None => panic!("&game_data is not of type UltTTT!"),
-            }
-        }
-        fn apply_my_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
-            let my_action = *UltTTTPlayerAction::downcast_self(player_action);
-            self.execute_player_action(my_action, MonteCarloPlayer::Me)
-                .is_not_vacant()
-                || self
-                    .status_map
-                    .get_cell_value(my_action.ult_ttt_big)
-                    .is_player()
-        }
-        fn apply_opp_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
-            let opp_action = *UltTTTPlayerAction::downcast_self(player_action);
-            self.execute_player_action(opp_action, MonteCarloPlayer::Opp)
-                .is_not_vacant()
-                || self
-                    .status_map
-                    .get_cell_value(opp_action.ult_ttt_big)
-                    .is_player()
-        }
-        fn simultaneous_player_actions_for_simultaneous_game_data_change(
-            &mut self,
-            _my_action: &impl MonteCarloPlayerAction,
-            _opp_action: &impl MonteCarloPlayerAction,
-        ) {
-        }
-        fn apply_game_data_update(
-            &mut self,
-            _game_data_update: &impl MonteCarloGameDataUpdate,
-            _check_update_consistency: bool,
-        ) -> bool {
-            false
-        }
-        fn is_game_data_update_required(&self, _force_update: bool) -> bool {
-            false
-        }
-        fn calc_heuristic(&self) -> f32 {
-            self.status_map.calc_heuristic_() * 10.0
-                + self
-                    .status_map
-                    .iter_map()
-                    .map(|(_, s)| match s {
-                        TicTacToeStatus::Player(player) => match player {
-                            MonteCarloPlayer::Me => 1.0,
-                            MonteCarloPlayer::Opp => -1.0,
-                        },
-                        _ => 0.0,
-                    })
-                    .sum::<f32>()
-        }
-        fn check_game_ending(&self, _game_turn: usize) -> bool {
-            self.status.is_not_vacant()
-        }
-        fn game_winner(&self, _game_turn: usize) -> Option<MonteCarloPlayer> {
-            match self.status {
-                TicTacToeStatus::Player(player) => Some(player),
-                _ => None,
-            }
-        }
-        fn check_consistency_of_game_data_during_init_root(
-            &mut self,
-            _current_game_state: &Self,
-            _played_turns: usize,
-        ) -> bool {
-            true
-        }
-        fn check_consistency_of_game_data_update(
-            &mut self,
-            _current_game_state: &Self,
-            _game_data_update: &impl MonteCarloGameDataUpdate,
-            _played_turns: usize,
-        ) -> bool {
-            true
-        }
-        fn check_consistency_of_action_result(
-            &mut self,
-            _current_game_state: Self,
-            _my_action: &impl MonteCarloPlayerAction,
-            _opp_action: &impl MonteCarloPlayerAction,
-            _played_turns: usize,
-            _apply_player_actions_to_game_data: bool,
-        ) -> bool {
-            true
-        }
+        let selected_move = mcts_ult_ttt.select_move();
+        selected_move.execute_action();
+        eprintln!("Iterations: {}", number_of_iterations);
+        first_turn = false;
+        assert!(game_data.game_turn <= max_number_of_turns);
     }
 }
 use std::fmt::Write;
@@ -340,14 +208,14 @@ impl UltTTTPlayerAction {
         action_commando_string
     }
 }
-#[derive(Copy, Clone, PartialEq, Default)]
-struct UltTTTGameDataUpdate {}
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default)]
 struct UltTTT {
     map: MyMap2D<TicTacToeGameData, X, Y>,
     status_map: TicTacToeGameData,
     status: TicTacToeStatus,
     next_action_square_is_specified: Option<MapPoint<X, Y>>,
+    current_player: MonteCarloPlayer,
+    game_turn: usize,
 }
 impl UltTTT {
     fn new() -> Self {
@@ -356,11 +224,18 @@ impl UltTTT {
             status_map: TicTacToeGameData::new(),
             status: TicTacToeStatus::Vacant,
             next_action_square_is_specified: None,
+            current_player: MonteCarloPlayer::Me,
+            game_turn: 0,
         }
     }
-    fn set_last_opp_action(&mut self, opp_map_point: MapPoint<U, V>) -> TicTacToeStatus {
-        let opp_action = UltTTTPlayerAction::from_ext(opp_map_point);
-        self.execute_player_action(opp_action, MonteCarloPlayer::Opp)
+    fn set_current_player(&mut self, player: MonteCarloPlayer) {
+        self.current_player = player;
+    }
+    fn next_player(&mut self) {
+        self.current_player = self.current_player.next_player();
+    }
+    fn increment_game_turn(&mut self) {
+        self.game_turn += 1;
     }
     fn execute_player_action(
         &mut self,
@@ -402,6 +277,41 @@ impl UltTTT {
             };
         }
         self.status
+    }
+}
+struct UltTTTMCTSGame {}
+impl MCTSTurnBasedGame for UltTTTMCTSGame {
+    fn current_player(state: &Self::State) -> MonteCarloPlayer {
+        state.current_player
+    }
+}
+impl MCTSGame for UltTTTMCTSGame {
+    type State = UltTTT;
+    type Move = UltTTTPlayerAction;
+    fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
+        Box::new(IterUltTTT::new(
+            state,
+            state.current_player,
+            state.game_turn,
+        ))
+    }
+    fn apply_move(state: &Self::State, mv: &Self::Move) -> Self::State {
+        let mut new_state = *state;
+        new_state.execute_player_action(*mv, state.current_player);
+        new_state.next_player();
+        new_state.increment_game_turn();
+        new_state
+    }
+    fn evaluate(state: &Self::State) -> f32 {
+        match state.status {
+            TicTacToeStatus::Player(MonteCarloPlayer::Me) => 1.0,
+            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => 0.0,
+            TicTacToeStatus::Tie => 0.5,
+            TicTacToeStatus::Vacant => f32::NAN,
+        }
+    }
+    fn is_terminal(state: &Self::State) -> bool {
+        state.status.is_not_vacant()
     }
 }
 use std::cmp::Ordering;
@@ -553,938 +463,190 @@ impl MonteCarloPlayer {
         }
     }
 }
-#[derive(Copy, Clone, PartialEq)]
-enum MonteCarloNodeType {
-    GameDataUpdate,
-    ActionResult,
+trait MCTSGame {
+    type State: Clone + PartialEq;
+    type Move;
+    fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a>;
+    fn apply_move(state: &Self::State, mv: &Self::Move) -> Self::State;
+    fn is_terminal(state: &Self::State) -> bool;
+    fn evaluate(state: &Self::State) -> f32;
 }
-#[derive(Copy, Clone, PartialEq)]
-enum MonteCarloGameMode {
-    SameTurnParallel,
-    ByTurns,
+trait MCTSTurnBasedGame: MCTSGame {
+    fn current_player(state: &Self::State) -> MonteCarloPlayer;
 }
-#[derive(PartialEq, Clone, Copy)]
-struct MonteCarloNode<G: MonteCarloGameData, A: MonteCarloPlayerAction, U: MonteCarloGameDataUpdate>
-{
-    game_data: G,
-    player_action: A,
-    game_data_update: U,
-    node_type: MonteCarloNodeType,
-    next_node: MonteCarloNodeType,
-    player: MonteCarloPlayer,
-    game_turn: usize,
-    heuristic: f32,
-    wins: f32,
-    samples: f32,
-    parent_samples: f32,
-    exploitation_score: f32,
-    exploration_score: f32,
-    heuristic_score: f32,
-    total_score: f32,
-    game_end_node: bool,
+trait MCTSNode<G: MCTSGame> {
+    fn get_state(&self) -> &G::State;
+    fn get_move(&self) -> Option<&G::Move> {
+        None
+    }
+    fn get_visits(&self) -> usize;
+    fn get_accumulated_value(&self) -> f32;
+    fn add_simulation_result(&mut self, result: f32);
+    fn increment_visits(&mut self);
 }
-impl<G: MonteCarloGameData, A: MonteCarloPlayerAction, U: MonteCarloGameDataUpdate> Default
-    for MonteCarloNode<G, A, U>
-{
-    fn default() -> Self {
-        Self::new()
+trait MCTSAlgo<G: MCTSGame> {
+    fn iterate(&mut self);
+    fn set_root(&mut self, state: &G::State) -> bool;
+    fn select_move(&self) -> &G::Move;
+}
+use rand::prelude::IteratorRandom;
+struct TurnBasedNode<G: MCTSTurnBasedGame> {
+    state: G::State,
+    visits: usize,
+    accumulated_value: f32,
+    mv: Option<G::Move>,
+    children: Vec<usize>,
+}
+impl<G: MCTSTurnBasedGame> MCTSNode<G> for TurnBasedNode<G> {
+    fn get_state(&self) -> &G::State {
+        &self.state
+    }
+    fn get_move(&self) -> Option<&G::Move> {
+        self.mv.as_ref()
+    }
+    fn get_visits(&self) -> usize {
+        self.visits
+    }
+    fn get_accumulated_value(&self) -> f32 {
+        self.accumulated_value
+    }
+    fn add_simulation_result(&mut self, result: f32) {
+        self.accumulated_value += result;
+    }
+    fn increment_visits(&mut self) {
+        self.visits += 1;
     }
 }
-impl<G: MonteCarloGameData, A: MonteCarloPlayerAction, U: MonteCarloGameDataUpdate>
-    MonteCarloNode<G, A, U>
-{
-    fn new() -> Self {
-        MonteCarloNode {
-            game_data: G::default(),
-            player_action: A::default(),
-            game_data_update: U::default(),
-            node_type: MonteCarloNodeType::ActionResult,
-            next_node: MonteCarloNodeType::ActionResult,
-            player: MonteCarloPlayer::Me,
-            game_turn: 0,
-            heuristic: 0.0,
-            wins: 0.0,
-            samples: f32::NAN,
-            parent_samples: 0.0,
-            exploitation_score: 0.0,
-            exploration_score: 0.0,
-            heuristic_score: 0.0,
-            total_score: 0.0,
-            game_end_node: false,
+impl<G: MCTSTurnBasedGame> TurnBasedNode<G> {
+    fn root_node(state: G::State) -> Self {
+        TurnBasedNode {
+            state,
+            visits: 0,
+            accumulated_value: 0.0,
+            mv: None,
+            children: vec![],
         }
     }
-    fn new_player_action_child(&self, player_action: A) -> Self {
-        let mut new_child = Self::new();
-        new_child.player_action = player_action;
-        new_child.game_turn = self.game_turn;
-        new_child.player = self.player;
-        new_child
-    }
-    fn new_game_data_update_child(&self, game_data_update: U) -> Self {
-        let mut new_child = Self::new();
-        new_child.game_data_update = game_data_update;
-        new_child.game_turn = self.game_turn;
-        new_child.player = self.player;
-        new_child.node_type = MonteCarloNodeType::GameDataUpdate;
-        new_child
-    }
-    fn calc_heuristic(&mut self, use_heuristic_score: bool) {
-        if use_heuristic_score {
-            self.heuristic = self.game_data.calc_heuristic();
+    fn new(state: G::State, mv: G::Move) -> Self {
+        TurnBasedNode {
+            state,
+            visits: 0,
+            accumulated_value: 0.0,
+            mv: Some(mv),
+            children: vec![],
         }
     }
-    fn calc_node_score(&mut self, parent_samples: f32, weighting_factor: f32) {
-        if parent_samples != self.parent_samples {
-            self.update_exploration_score(parent_samples, weighting_factor);
+    fn add_child(&mut self, child_index: usize) {
+        self.children.push(child_index);
+    }
+    fn get_children(&self) -> &Vec<usize> {
+        &self.children
+    }
+    fn calc_utc(&self, parent_visits: usize, c: f32) -> f32 {
+        if self.visits == 0 {
+            return f32::INFINITY;
         }
-        self.total_score = match self.player {
-            MonteCarloPlayer::Me => {
-                self.exploitation_score + self.exploration_score - self.heuristic_score
-            }
-            MonteCarloPlayer::Opp => {
-                self.exploitation_score + self.exploration_score + self.heuristic_score
-            }
+        let raw_exploitation = self.accumulated_value / self.visits as f32;
+        let exploitation = match G::current_player(&self.state) {
+            MonteCarloPlayer::Me => 1.0 - raw_exploitation,
+            MonteCarloPlayer::Opp => raw_exploitation,
         };
+        let exploration = c * ((parent_visits as f32).ln() / self.visits as f32).sqrt();
+        exploitation + exploration
     }
-    fn check_game_turn(&mut self, game_mode: MonteCarloGameMode) {
-        match game_mode {
-            MonteCarloGameMode::SameTurnParallel => {
-                if self.player == MonteCarloPlayer::Opp {
-                    self.game_turn += 1;
+}
+struct TurnBasedMCTS<G: MCTSTurnBasedGame> {
+    nodes: Vec<TurnBasedNode<G>>,
+    root_index: usize,
+    exploration_constant: f32,
+}
+impl<G: MCTSTurnBasedGame> TurnBasedMCTS<G> {
+    fn new(exploration_constant: f32) -> Self {
+        Self {
+            nodes: vec![],
+            root_index: 0,
+            exploration_constant,
+        }
+    }
+}
+impl<G: MCTSTurnBasedGame> MCTSAlgo<G> for TurnBasedMCTS<G> {
+    fn iterate(&mut self) {
+        let mut path = vec![self.root_index];
+        let mut current_index = self.root_index;
+        while !self.nodes[current_index].get_children().is_empty() {
+            let parent_visits = self.nodes[current_index].get_visits();
+            let mut best_child_index = 0;
+            let mut best_utc = f32::NEG_INFINITY;
+            for &child_index in self.nodes[current_index].get_children() {
+                let utc =
+                    self.nodes[child_index].calc_utc(parent_visits, self.exploration_constant);
+                if utc > best_utc {
+                    best_utc = utc;
+                    best_child_index = child_index;
                 }
             }
-            MonteCarloGameMode::ByTurns => self.game_turn += 1,
+            path.push(best_child_index);
+            current_index = best_child_index;
         }
-    }
-    fn set_next_node(&mut self, force_update: bool) {
-        if !self.game_end_node {
-            self.next_node = if self.game_data.is_game_data_update_required(force_update) {
-                MonteCarloNodeType::GameDataUpdate
-            } else {
-                MonteCarloNodeType::ActionResult
-            };
-        }
-    }
-    fn apply_action(
-        &mut self,
-        parent_game_data: &G,
-        parent_action: &A,
-        game_mode: MonteCarloGameMode,
-        max_number_of_turns: usize,
-        use_heuristic_score: bool,
-    ) {
-        self.game_data = *parent_game_data;
-        let mut score_event = self.apply_player_action();
-        self.player = self.player.next_player();
-        self.check_game_turn(game_mode);
-        match game_mode {
-            MonteCarloGameMode::SameTurnParallel => {
-                if self.player == MonteCarloPlayer::Me {
-                    if self.check_game_ending(max_number_of_turns) {
-                        self.calc_heuristic(use_heuristic_score);
-                        return;
-                    }
-                    self.game_data
-                        .simultaneous_player_actions_for_simultaneous_game_data_change(
-                            parent_action,
-                            &self.player_action,
-                        );
-                }
-            }
-            MonteCarloGameMode::ByTurns => {
-                score_event = self.check_game_ending(max_number_of_turns) || score_event;
-            }
-        }
-        if score_event {
-            self.calc_heuristic(use_heuristic_score);
-        }
-    }
-    fn apply_game_data_update(
-        &mut self,
-        parent_game_data: &G,
-        check_update_consistency: bool,
-    ) -> bool {
-        self.game_data = *parent_game_data;
-        self.game_data
-            .apply_game_data_update(&self.game_data_update, check_update_consistency)
-    }
-    fn apply_player_action(&mut self) -> bool {
-        match self.player {
-            MonteCarloPlayer::Me => self.game_data.apply_my_action(&self.player_action),
-            MonteCarloPlayer::Opp => self.game_data.apply_opp_action(&self.player_action),
-        }
-    }
-    fn check_game_ending(&mut self, max_number_of_turns: usize) -> bool {
-        self.game_end_node = self.game_turn == max_number_of_turns
-            || self.game_data.check_game_ending(self.game_turn);
-        self.game_end_node
-    }
-    fn calc_simulation_score(&self) -> f32 {
-        match self.game_data.game_winner(self.game_turn) {
-            Some(player) => match player {
-                MonteCarloPlayer::Me => 1.0,
-                MonteCarloPlayer::Opp => 0.0,
-            },
-            None => 0.5,
-        }
-    }
-    fn score_simulation_result(
-        &mut self,
-        simulation_score: f32,
-        samples: f32,
-        use_heuristic_score: bool,
-    ) {
-        self.wins += simulation_score;
-        self.samples += samples;
-        self.exploitation_score = match self.player {
-            MonteCarloPlayer::Me => 1.0 - self.wins / self.samples,
-            MonteCarloPlayer::Opp => self.wins / self.samples,
-        };
-        if use_heuristic_score {
-            self.heuristic_score = match self.player {
-                MonteCarloPlayer::Me => -self.heuristic / self.samples,
-                MonteCarloPlayer::Opp => self.heuristic / self.samples,
-            };
-        }
-    }
-    fn update_exploration_score(&mut self, parent_samples: f32, weighting_factor: f32) {
-        self.parent_samples = parent_samples;
-        self.exploration_score =
-            weighting_factor * (self.parent_samples.log10() / self.samples).sqrt();
-    }
-    fn update_consistent_node_during_init_phase(
-        &mut self,
-        current_game_state: &G,
-        played_turns: usize,
-        force_update: bool,
-    ) -> bool {
-        if !force_update
-            && !self
-                .game_data
-                .check_consistency_of_game_data_during_init_root(current_game_state, played_turns)
+        let current_index = if G::is_terminal(self.nodes[current_index].get_state())
+            || self.nodes[current_index].get_visits() == 0
         {
-            return false;
+            current_index
+        } else {
+            let current_state = self.nodes[current_index].get_state().clone();
+            for mv in G::available_moves(&current_state) {
+                let new_state = G::apply_move(&current_state, &mv);
+                let new_node = TurnBasedNode::new(new_state, mv);
+                self.nodes.push(new_node);
+                let child_index = self.nodes.len() - 1;
+                self.nodes[current_index].add_child(child_index);
+            }
+            let child_index = *self.nodes[current_index]
+                .get_children()
+                .first()
+                .expect("No children found");
+            path.push(child_index);
+            child_index
+        };
+        let mut current_state = self.nodes[current_index].get_state().clone();
+        while !G::is_terminal(&current_state) {
+            let random_move = G::available_moves(&current_state)
+                .choose(&mut rand::thread_rng())
+                .expect("No available moves");
+            current_state = G::apply_move(&current_state, &random_move);
         }
-        self.game_data == *current_game_state
-    }
-}
-use std::any::Any;
-use std::hash::Hash;
-trait MonteCarloPlayerAction: Copy + Clone + PartialEq + Default + 'static {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn downcast_self(player_action: &impl MonteCarloPlayerAction) -> &Self;
-    fn iter_actions(
-        game_data: &impl MonteCarloGameData,
-        player: MonteCarloPlayer,
-        parent_game_turn: usize,
-    ) -> Box<dyn Iterator<Item = Self> + '_>;
-}
-trait MonteCarloGameDataUpdate: Copy + Clone + PartialEq + Default + 'static {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn downcast_self(game_data_update: &impl MonteCarloGameDataUpdate) -> &Self;
-    fn iter_game_data_updates(
-        game_data: &impl MonteCarloGameData,
-        force_update: bool,
-    ) -> Box<dyn Iterator<Item = Self> + '_>;
-}
-trait MonteCarloGameData: Copy + Clone + PartialEq + Eq + Hash + Default + 'static {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn downcast_self(game_data: &impl MonteCarloGameData) -> &Self;
-    fn apply_my_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool;
-    fn apply_opp_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool;
-    fn simultaneous_player_actions_for_simultaneous_game_data_change(
-        &mut self,
-        my_action: &impl MonteCarloPlayerAction,
-        opp_action: &impl MonteCarloPlayerAction,
-    );
-    fn is_game_data_update_required(&self, force_update: bool) -> bool;
-    fn apply_game_data_update(
-        &mut self,
-        game_data_update: &impl MonteCarloGameDataUpdate,
-        check_update_consistency: bool,
-    ) -> bool;
-    fn calc_heuristic(&self) -> f32;
-    fn check_game_ending(&self, game_turn: usize) -> bool;
-    fn game_winner(&self, game_turn: usize) -> Option<MonteCarloPlayer>;
-    fn check_consistency_of_game_data_during_init_root(
-        &mut self,
-        current_game_state: &Self,
-        played_turns: usize,
-    ) -> bool;
-    fn check_consistency_of_game_data_update(
-        &mut self,
-        current_game_state: &Self,
-        game_data_update: &impl MonteCarloGameDataUpdate,
-        played_turns: usize,
-    ) -> bool;
-    fn check_consistency_of_action_result(
-        &mut self,
-        current_game_state: Self,
-        my_action: &impl MonteCarloPlayerAction,
-        opp_action: &impl MonteCarloPlayerAction,
-        played_turns: usize,
-        apply_player_actions_to_game_data: bool,
-    ) -> bool;
-}
-use rand::prelude::*;
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::rc::Weak;
-use std::time::Instant;
-struct MonteCarloTreeSearch<
-    G: MonteCarloGameData,
-    A: MonteCarloPlayerAction,
-    U: MonteCarloGameDataUpdate,
-> {
-    tree_root: Rc<TreeNode<MonteCarloNode<G, A, U>>>,
-    game_mode: MonteCarloGameMode,
-    starting_player: MonteCarloPlayer,
-    played_turns: usize,
-    max_number_of_turns: usize,
-    force_update: bool,
-    first_turn: bool,
-    time_out_first_turn: Duration,
-    time_out_successive_turns: Duration,
-    weighting_factor: f32,
-    use_heuristic_score: bool,
-    use_caching: bool,
-    #[allow(clippy::type_complexity)]
-    node_cache: HashMap<(G, MonteCarloPlayer, usize), Weak<TreeNode<MonteCarloNode<G, A, U>>>>,
-    cache_events: usize,
-    debug: bool,
-}
-impl<G: MonteCarloGameData, A: MonteCarloPlayerAction, U: MonteCarloGameDataUpdate>
-    MonteCarloTreeSearch<G, A, U>
-{
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        game_mode: MonteCarloGameMode,
-        max_number_of_turns: usize,
-        force_update: bool,
-        time_out_first_turn: Duration,
-        time_out_successive_turns: Duration,
-        weighting_factor: f32,
-        use_heuristic_score: bool,
-        use_caching: bool,
-        debug: bool,
-    ) -> Self {
-        MonteCarloTreeSearch {
-            tree_root: TreeNode::seed_root(MonteCarloNode::<G, A, U>::new(), 0),
-            game_mode,
-            starting_player: MonteCarloPlayer::Me,
-            played_turns: 0,
-            max_number_of_turns,
-            force_update,
-            first_turn: true,
-            time_out_first_turn,
-            time_out_successive_turns,
-            weighting_factor,
-            use_heuristic_score,
-            use_caching,
-            node_cache: HashMap::new(),
-            cache_events: 0,
-            debug,
+        let simulation_result = G::evaluate(&current_state);
+        for &node_index in path.iter().rev() {
+            self.nodes[node_index].increment_visits();
+            self.nodes[node_index].add_simulation_result(simulation_result);
         }
     }
-    fn init_root(&mut self, game_data: &G, starting_player: MonteCarloPlayer) -> Instant {
-        let start = Instant::now();
-        if self.first_turn {
-            self.starting_player = starting_player;
-            self.tree_root.get_mut_value().game_data = *game_data;
-            self.tree_root.get_mut_value().samples = 0.0;
-            if self.game_mode == MonteCarloGameMode::ByTurns
-                && self.starting_player == MonteCarloPlayer::Opp
+    fn set_root(&mut self, state: &G::State) -> bool {
+        if !self.nodes.is_empty() {
+            if let Some(new_root) = self.nodes[self.root_index]
+                .get_children()
+                .iter()
+                .flat_map(|&my_move_nodes| self.nodes[my_move_nodes].get_children())
+                .find(|&&opponent_move_nodes| self.nodes[opponent_move_nodes].get_state() == state)
             {
-                self.played_turns = 1;
-                self.tree_root.get_mut_value().game_turn = 1;
-                self.tree_root.get_mut_value().player = MonteCarloPlayer::Me;
-            } else {
-                self.tree_root.get_mut_value().node_type = MonteCarloNodeType::GameDataUpdate;
-                self.tree_root.get_mut_value().player = starting_player;
-            }
-        } else {
-            let (search_turn, end_level) = match self.game_mode {
-                MonteCarloGameMode::SameTurnParallel => (self.played_turns, Some(3)),
-                MonteCarloGameMode::ByTurns => (self.played_turns + 1, Some(2)),
-            };
-            match self
-                .tree_root
-                .iter_level_order_traversal_with_borders(1, end_level)
-                .find(|(n, _)| {
-                    let mut n_value = n.get_mut_value();
-                    n_value.game_turn == search_turn
-                        && n_value.next_node == MonteCarloNodeType::ActionResult
-                        && n_value.player == MonteCarloPlayer::Me
-                        && n_value.update_consistent_node_during_init_phase(
-                            game_data,
-                            self.played_turns,
-                            self.force_update,
-                        )
-                }) {
-                Some((new_root, _)) => {
-                    self.tree_root = new_root;
-                    if self.tree_root.get_value().samples.is_nan() {
-                        self.tree_root.get_mut_value().samples = 0.0;
-                    }
-                }
-                None => {
-                    if self.debug {
-                        eprintln ! ("Current game state not found in tree. Reinitialize tree after {} played turns" , self . played_turns);
-                    }
-                    self.tree_root = TreeNode::seed_root(MonteCarloNode::<G, A, U>::new(), 0);
-                    self.tree_root.get_mut_value().game_data = *game_data;
-                    self.tree_root.get_mut_value().samples = 0.0;
-                    self.tree_root.get_mut_value().player = MonteCarloPlayer::Me;
-                    self.tree_root.get_mut_value().game_turn = search_turn;
-                }
+                self.root_index = *new_root;
+                return true;
             }
         }
-        start
-    }
-    fn expand_tree(&mut self, start: Instant) {
-        let time_out = if self.first_turn {
-            self.first_turn = false;
-            self.time_out_first_turn
-        } else {
-            self.time_out_successive_turns
-        };
-        let current_cache_events = if self.use_caching {
-            self.node_cache.retain(|_, v| v.weak_count() > 0);
-            self.cache_events
-        } else {
-            0
-        };
-        let mut counter = 0;
-        while start.elapsed() < time_out && !self.one_cycle(&start, time_out) {
-            counter += 1;
-        }
-        if self.debug {
-            eprintln!("number of expand cycles: {}", counter);
-            if self.use_caching {
-                eprintln!(
-                    "number of cache events (current expansion / total): {}/{}",
-                    self.cache_events - current_cache_events,
-                    self.cache_events
-                );
-            }
-        }
-    }
-    fn choose_and_execute_actions(&mut self) -> (G, A) {
-        let child = self
-            .tree_root
-            .iter_children()
-            .max_by(|x, y| {
-                match x
-                    .get_value()
-                    .exploitation_score
-                    .partial_cmp(&y.get_value().exploitation_score)
-                    .unwrap()
-                {
-                    Ordering::Greater => Ordering::Greater,
-                    Ordering::Less => Ordering::Less,
-                    Ordering::Equal => x
-                        .get_value()
-                        .samples
-                        .partial_cmp(&y.get_value().samples)
-                        .unwrap(),
-                }
-            })
-            .unwrap();
-        self.played_turns = child.get_value().game_turn;
-        self.tree_root = child.clone();
-        let result = (child.get_value().game_data, child.get_value().player_action);
-        result
-    }
-    fn one_cycle(&mut self, start: &Instant, time_out: Duration) -> bool {
-        let mut start_node = self.tree_root.clone();
-        loop {
-            match self.selection(start, time_out, start_node) {
-                Some(selection_node) => match self.expansion(selection_node) {
-                    Ok(child_node) => {
-                        if let Some(simulation_score) =
-                            self.simulation(child_node.clone(), start, time_out)
-                        {
-                            self.propagation(child_node, simulation_score)
-                        }
-                    }
-                    Err(parent_with_cached_child) => {
-                        start_node = parent_with_cached_child;
-                        continue;
-                    }
-                },
-                None => return true,
-            }
-            break;
-        }
+        self.nodes.clear();
+        self.nodes.push(TurnBasedNode::root_node(state.clone()));
+        self.root_index = 0;
         false
     }
-    fn selection(
-        &self,
-        start: &Instant,
-        time_out: Duration,
-        mut selection_node: Rc<TreeNode<MonteCarloNode<G, A, U>>>,
-    ) -> Option<Rc<TreeNode<MonteCarloNode<G, A, U>>>> {
-        let mut rng = thread_rng();
-        while !selection_node.is_leave() {
-            if start.elapsed() >= time_out {
-                return None;
-            }
-            if self.remove_inconsistent_children(selection_node.clone()) {
-                return Some(selection_node);
-            }
-            if let Some(child_without_samples) = selection_node
-                .iter_children()
-                .filter(|c| c.get_value().samples.is_nan())
-                .choose(&mut rng)
-            {
-                return Some(child_without_samples);
-            }
-            selection_node.iter_children().for_each(|c| {
-                c.get_mut_value()
-                    .calc_node_score(selection_node.get_value().samples, self.weighting_factor)
-            });
-            let selected_child = selection_node.iter_children().max_by(|a, b| {
-                a.get_value()
-                    .total_score
-                    .partial_cmp(&b.get_value().total_score)
-                    .unwrap()
-            });
-            selection_node = match selected_child {
-                Some(child) => {
-                    if self.force_update {
-                        child.clone()
-                    } else {
-                        let node_type = child.get_value().node_type;
-                        match node_type {
-                            MonteCarloNodeType::ActionResult => {
-                                let child_action = child.get_value().player_action;
-                                let apply_player_actions_to_game_data = match self.game_mode {
-                                    MonteCarloGameMode::SameTurnParallel => {
-                                        child.get_value().player == MonteCarloPlayer::Me
-                                    }
-                                    MonteCarloGameMode::ByTurns => true,
-                                };
-                                let child_game_data_changed = child
-                                    .get_mut_value()
-                                    .game_data
-                                    .check_consistency_of_action_result(
-                                        selection_node.get_value().game_data,
-                                        &selection_node.get_value().player_action,
-                                        &child_action,
-                                        self.played_turns,
-                                        apply_player_actions_to_game_data,
-                                    );
-                                if child_game_data_changed
-                                    && child.get_value().next_node
-                                        == MonteCarloNodeType::GameDataUpdate
-                                    && child.is_leave()
-                                {
-                                    child.get_mut_value().set_next_node(self.force_update);
-                                }
-                                child.clone()
-                            }
-                            MonteCarloNodeType::GameDataUpdate => child.clone(),
-                        }
-                    }
-                }
-                None => panic!("selection should always find a child!"),
-            };
-        }
-        Some(selection_node)
-    }
-    #[allow(clippy::type_complexity)]
-    fn expansion(
-        &mut self,
-        expansion_node: Rc<TreeNode<MonteCarloNode<G, A, U>>>,
-    ) -> Result<Rc<TreeNode<MonteCarloNode<G, A, U>>>, Rc<TreeNode<MonteCarloNode<G, A, U>>>> {
-        if expansion_node.get_value().game_end_node || expansion_node.get_value().samples.is_nan() {
-            return Ok(expansion_node);
-        }
-        let mut found_cached_game_state = false;
-        let next_node = expansion_node.get_value().next_node;
-        match next_node {
-            MonteCarloNodeType::GameDataUpdate => {
-                for game_data_update in U::iter_game_data_updates(
-                    &expansion_node.get_value().game_data,
-                    self.force_update,
-                ) {
-                    let mut new_game_data_update_node = expansion_node
-                        .get_value()
-                        .new_game_data_update_child(game_data_update);
-                    if new_game_data_update_node.apply_game_data_update(
-                        &expansion_node.get_value().game_data,
-                        !self.force_update,
-                    ) {
-                        new_game_data_update_node.set_next_node(self.force_update);
-                        expansion_node.add_child(new_game_data_update_node, 0);
-                    }
-                }
-            }
-            MonteCarloNodeType::ActionResult => {
-                for player_action in A::iter_actions(
-                    &expansion_node.get_value().game_data,
-                    expansion_node.get_value().player,
-                    expansion_node.get_value().game_turn,
-                ) {
-                    let mut new_player_action_node = expansion_node
-                        .get_value()
-                        .new_player_action_child(player_action);
-                    new_player_action_node.apply_action(
-                        &expansion_node.get_value().game_data,
-                        &expansion_node.get_value().player_action,
-                        self.game_mode,
-                        self.max_number_of_turns,
-                        self.use_heuristic_score,
-                    );
-                    new_player_action_node.set_next_node(self.force_update);
-                    if self.use_caching {
-                        let cache_key = (
-                            new_player_action_node.game_data,
-                            new_player_action_node.player,
-                            new_player_action_node.game_turn,
-                        );
-                        if let Some(cached_child) = self.node_cache.get(&cache_key) {
-                            if let Some(child) = cached_child.upgrade() {
-                                expansion_node.link_child_to_parent(child);
-                                found_cached_game_state = true;
-                                self.cache_events += 1;
-                                continue;
-                            }
-                        }
-                        let child = expansion_node.add_child(new_player_action_node, 0);
-                        if self.game_mode == MonteCarloGameMode::ByTurns
-                            || (self.game_mode == MonteCarloGameMode::SameTurnParallel
-                                && new_player_action_node.player == MonteCarloPlayer::Me)
-                        {
-                            self.node_cache.insert(cache_key, Rc::downgrade(&child));
-                        }
-                    } else {
-                        expansion_node.add_child(new_player_action_node, 0);
-                    }
-                }
-            }
-        }
-        if found_cached_game_state {
-            return Err(expansion_node);
-        }
-        Ok(expansion_node.get_child(0).unwrap())
-    }
-    fn simulation(
-        &self,
-        simulation_node: Rc<TreeNode<MonteCarloNode<G, A, U>>>,
-        start: &Instant,
-        time_out: Duration,
-    ) -> Option<f32> {
-        if simulation_node.get_value().game_end_node {
-            Some(simulation_node.get_value().calc_simulation_score())
-        } else {
-            let mut rng = thread_rng();
-            let mut simulation = *simulation_node.get_value();
-            while !simulation.game_end_node {
-                if start.elapsed() >= time_out {
-                    return None;
-                }
-                match simulation.next_node {
-                    MonteCarloNodeType::GameDataUpdate => {
-                        let parent_game_data = simulation.game_data;
-                        let game_data_update =
-                            U::iter_game_data_updates(&simulation.game_data, self.force_update)
-                                .choose(&mut rng)
-                                .unwrap();
-                        simulation = simulation.new_game_data_update_child(game_data_update);
-                        simulation.apply_game_data_update(&parent_game_data, false);
-                        simulation.set_next_node(self.force_update);
-                    }
-                    MonteCarloNodeType::ActionResult => {
-                        let parent_game_data = simulation.game_data;
-                        let parent_action = simulation.player_action;
-                        let player_action = A::iter_actions(
-                            &simulation.game_data,
-                            simulation.player,
-                            simulation.game_turn,
-                        )
-                        .choose(&mut rng)
-                        .unwrap();
-                        simulation = simulation.new_player_action_child(player_action);
-                        simulation.apply_action(
-                            &parent_game_data,
-                            &parent_action,
-                            self.game_mode,
-                            self.max_number_of_turns,
-                            self.use_heuristic_score,
-                        );
-                        simulation.set_next_node(self.force_update);
-                    }
-                }
-            }
-            Some(simulation.calc_simulation_score())
-        }
-    }
-    fn propagation(
-        &self,
-        start_node: Rc<TreeNode<MonteCarloNode<G, A, U>>>,
-        mut simulation_score: f32,
-    ) {
-        if start_node.get_value().samples.is_nan() {
-            start_node.get_mut_value().samples = 0.0;
-        }
-        for nodes in start_node.iter_back_track() {
-            for node in nodes.iter() {
-                if node.get_value().next_node == MonteCarloNodeType::GameDataUpdate
-                    && node.len_children() > 0
-                {
-                    let num_children = node.len_children() as f32;
-                    simulation_score /= num_children;
-                }
-                node.get_mut_value().score_simulation_result(
-                    simulation_score,
-                    1.0,
-                    self.use_heuristic_score,
-                );
-            }
-        }
-    }
-    fn reverse_propagation(
-        &self,
-        start_node: Rc<TreeNode<MonteCarloNode<G, A, U>>>,
-        mut wins: f32,
-        mut samples: f32,
-    ) {
-        start_node
-            .get_mut_value()
-            .score_simulation_result(wins, samples, self.use_heuristic_score);
-        for nodes in start_node.iter_back_track().skip(1) {
-            for node in nodes.iter() {
-                if node.get_value().next_node == MonteCarloNodeType::GameDataUpdate {
-                    let num_children = node.len_children() as f32;
-                    wins /= num_children;
-                    samples /= num_children;
-                }
-                node.get_mut_value().score_simulation_result(
-                    wins,
-                    samples,
-                    self.use_heuristic_score,
-                );
-            }
-        }
-    }
-    fn remove_inconsistent_children(
-        &self,
-        selection_node: Rc<TreeNode<MonteCarloNode<G, A, U>>>,
-    ) -> bool {
-        if self.force_update
-            || selection_node.get_value().next_node == MonteCarloNodeType::ActionResult
-            || selection_node.len_children() == 1
-        {
-            return false;
-        }
-        let n_children = selection_node.len_children() as f32;
-        let mut index = 0;
-        let mut samples = 0.0;
-        let mut wins = 0.0;
-        let mut inconsistency_detected = false;
-        while index < selection_node.len_children() {
-            let child = selection_node.get_child(index).unwrap();
-            if !child.get_value().samples.is_nan() {
-                samples += child.get_value().samples;
-                wins += child.get_value().wins;
-                let child_game_data_update = child.get_value().game_data_update;
-                if child
-                    .get_mut_value()
-                    .game_data
-                    .check_consistency_of_game_data_update(
-                        &selection_node.get_value().game_data,
-                        &child_game_data_update,
-                        self.played_turns,
-                    )
-                {
-                    index += 1;
-                } else {
-                    selection_node.swap_remove_child(index);
-                    inconsistency_detected = true;
-                }
-            } else {
-                index += 1;
-            }
-        }
-        if inconsistency_detected {
-            wins = -wins / n_children;
-            samples = -samples / n_children;
-            let consistent_child_index = selection_node
-                .iter_children()
-                .position(|c| !c.get_value().samples.is_nan());
-            match consistent_child_index {
-                Some(index) => {
-                    wins += selection_node.get_child(index).unwrap().get_value().wins;
-                    samples += selection_node.get_child(index).unwrap().get_value().samples;
-                    self.reverse_propagation(selection_node.clone(), wins, samples);
-                    selection_node.split_off_children(index, true);
-                    selection_node.split_off_children(1, false);
-                }
-                None => {
-                    self.reverse_propagation(selection_node.clone(), wins, samples);
-                    selection_node.clear_children(0);
-                    selection_node
-                        .get_mut_value()
-                        .set_next_node(self.force_update);
-                    return true;
-                }
-            }
-        }
-        false
-    }
-}
-use rand::seq::IteratorRandom;
-#[derive(Copy, Clone, PartialEq, Default)]
-struct TicTacToePlayerAction {
-    cell: MapPoint<X, Y>,
-}
-impl MonteCarloPlayerAction for TicTacToePlayerAction {
-    fn downcast_self(player_action: &impl MonteCarloPlayerAction) -> &Self {
-        match player_action.as_any().downcast_ref::<Self>() {
-            Some(ttt_pa) => ttt_pa,
-            None => panic!("player_action is not of type TicTacToePlayerAction!"),
-        }
-    }
-    fn iter_actions(
-        game_data: &impl MonteCarloGameData,
-        _player: MonteCarloPlayer,
-        _parent_game_turn: usize,
-    ) -> Box<dyn Iterator<Item = Self> + '_> {
-        let game_data = TicTacToeGameData::downcast_self(game_data);
-        Box::new(IterTicTacToePlayerAction::new(game_data))
-    }
-}
-struct IterTicTacToePlayerAction<'a> {
-    ttt_data: &'a TicTacToeGameData,
-    iter_action: TicTacToePlayerAction,
-    iter_finished: bool,
-}
-impl<'a> IterTicTacToePlayerAction<'a> {
-    fn new(ttt_data: &'a TicTacToeGameData) -> Self {
-        let mut result = IterTicTacToePlayerAction {
-            ttt_data,
-            iter_action: TicTacToePlayerAction::default(),
-            iter_finished: false,
-        };
-        match result.ttt_data.map.iter().find(|(_, v)| v.is_vacant()) {
-            Some((start_point, _)) => result.iter_action.cell = start_point,
-            None => result.iter_finished = true,
-        };
-        result
-    }
-}
-impl Iterator for IterTicTacToePlayerAction<'_> {
-    type Item = TicTacToePlayerAction;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.iter_finished {
-            return None;
-        }
-        let result = self.iter_action;
-        let mut searching_new_action = true;
-        while searching_new_action {
-            match self.iter_action.cell.forward_x() {
-                Some(new_cell) => {
-                    self.iter_action.cell = new_cell;
-                    searching_new_action = self.ttt_data.map.get(new_cell).is_not_vacant();
-                }
-                None => {
-                    self.iter_finished = true;
-                    searching_new_action = false;
-                }
-            }
-        }
-        Some(result)
-    }
-}
-#[derive(Copy, Clone, PartialEq, Default)]
-struct TicTacToeGameDataUpdate {}
-impl MonteCarloGameDataUpdate for TicTacToeGameDataUpdate {
-    fn downcast_self(_game_data_update: &impl MonteCarloGameDataUpdate) -> &Self {
-        &TicTacToeGameDataUpdate {}
-    }
-    fn iter_game_data_updates(
-        _game_data: &impl MonteCarloGameData,
-        _force_update: bool,
-    ) -> Box<dyn Iterator<Item = Self> + '_> {
-        Box::new(vec![].into_iter())
-    }
-}
-impl MonteCarloGameData for TicTacToeGameData {
-    fn downcast_self(game_data: &impl MonteCarloGameData) -> &Self {
-        match game_data.as_any().downcast_ref::<Self>() {
-            Some(ttt_gd) => ttt_gd,
-            None => panic!("game_data is not of type TicTacToeGameData!"),
-        }
-    }
-    fn apply_my_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
-        let player_action = TicTacToePlayerAction::downcast_self(player_action);
-        self.set_player(player_action.cell, MonteCarloPlayer::Me);
-        true
-    }
-    fn apply_opp_action(&mut self, player_action: &impl MonteCarloPlayerAction) -> bool {
-        let player_action = TicTacToePlayerAction::downcast_self(player_action);
-        self.set_player(player_action.cell, MonteCarloPlayer::Opp);
-        true
-    }
-    fn simultaneous_player_actions_for_simultaneous_game_data_change(
-        &mut self,
-        _my_action: &impl MonteCarloPlayerAction,
-        _opp_action: &impl MonteCarloPlayerAction,
-    ) {
-    }
-    fn is_game_data_update_required(&self, _force_update: bool) -> bool {
-        false
-    }
-    fn apply_game_data_update(
-        &mut self,
-        _game_data_update: &impl MonteCarloGameDataUpdate,
-        _check_update_consistency: bool,
-    ) -> bool {
-        true
-    }
-    fn calc_heuristic(&self) -> f32 {
-        self.calc_heuristic_()
-    }
-    fn check_game_ending(&self, _game_turn: usize) -> bool {
-        self.status.is_not_vacant()
-    }
-    fn game_winner(&self, _game_turn: usize) -> Option<MonteCarloPlayer> {
-        match self.status {
-            TicTacToeStatus::Player(player) => Some(player),
-            _ => None,
-        }
-    }
-    fn check_consistency_of_game_data_during_init_root(
-        &mut self,
-        _current_game_state: &Self,
-        _played_turns: usize,
-    ) -> bool {
-        true
-    }
-    fn check_consistency_of_game_data_update(
-        &mut self,
-        _current_game_state: &Self,
-        _game_data_update: &impl MonteCarloGameDataUpdate,
-        _played_turns: usize,
-    ) -> bool {
-        true
-    }
-    fn check_consistency_of_action_result(
-        &mut self,
-        _current_game_state: Self,
-        _my_action: &impl MonteCarloPlayerAction,
-        _opp_action: &impl MonteCarloPlayerAction,
-        _played_turns: usize,
-        _apply_player_actions_to_game_data: bool,
-    ) -> bool {
-        true
+    fn select_move(&self) -> &G::Move {
+        let move_index = self.nodes[self.root_index]
+            .get_children()
+            .iter()
+            .max_by_key(|&&child_index| self.nodes[child_index].get_visits())
+            .expect("could not find move_index");
+        self.nodes[*move_index]
+            .get_move()
+            .expect("node did not contain move")
     }
 }
 const X: usize = 3;
@@ -1502,9 +664,6 @@ impl TicTacToeStatus {
     }
     fn is_not_vacant(&self) -> bool {
         *self != Self::Vacant
-    }
-    fn is_player(&self) -> bool {
-        matches!(self, Self::Player(_))
     }
 }
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default)]
@@ -1596,51 +755,6 @@ impl TicTacToeGameData {
             .iter()
             .map(move |p| self.map.get((*p).into()))
     }
-    fn calc_line_heuristic<'a>(&self, line: impl Iterator<Item = &'a TicTacToeStatus>) -> f32 {
-        let mut count: u8 = 0;
-        let mut line_owner: Option<MonteCarloPlayer> = None;
-        for cell in line {
-            match cell {
-                TicTacToeStatus::Vacant => (),
-                TicTacToeStatus::Tie => return 0.0,
-                TicTacToeStatus::Player(player) => match line_owner {
-                    Some(owner) => {
-                        if *player == owner {
-                            count += 1;
-                        } else {
-                            return 0.0;
-                        }
-                    }
-                    None => {
-                        line_owner = Some(*player);
-                        count += 1;
-                    }
-                },
-            }
-        }
-        let line_heuristic = match count {
-            1 => 1.0,
-            2 => 10.0,
-            _ => 100.0,
-        };
-        match line_owner {
-            Some(player) => match player {
-                MonteCarloPlayer::Me => line_heuristic,
-                MonteCarloPlayer::Opp => -line_heuristic,
-            },
-            None => 0.0,
-        }
-    }
-    fn calc_heuristic_(&self) -> f32 {
-        let mut heuristic = 0.0;
-        for rc in 0..3 {
-            heuristic += self.calc_line_heuristic(self.map.iter_row(rc).map(|(_, v)| v));
-            heuristic += self.calc_line_heuristic(self.map.iter_column(rc).map(|(_, v)| v));
-        }
-        heuristic += self.calc_line_heuristic(self.iter_diagonal_top_left());
-        heuristic += self.calc_line_heuristic(self.iter_diagonal_top_right());
-        heuristic
-    }
     fn set_player(&mut self, cell: MapPoint<X, Y>, player: MonteCarloPlayer) -> TicTacToeStatus {
         match player {
             MonteCarloPlayer::Me => {
@@ -1690,358 +804,4 @@ impl TicTacToeGameData {
             })
             .count()
     }
-    fn iter_map(&self) -> impl Iterator<Item = (MapPoint<X, Y>, &TicTacToeStatus)> {
-        self.map.iter()
-    }
-}
-use std::collections::HashSet;
-struct BackTrack<N> {
-    current_nodes: Vec<Rc<TreeNode<N>>>,
-    finished: bool,
-}
-impl<N: PartialEq> BackTrack<N> {
-    fn new(node: Rc<TreeNode<N>>) -> Self {
-        BackTrack {
-            current_nodes: vec![node],
-            finished: false,
-        }
-    }
-}
-impl<N: PartialEq> Iterator for BackTrack<N> {
-    type Item = Vec<Rc<TreeNode<N>>>;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.finished {
-            return None;
-        }
-        let result = Some(self.current_nodes.clone());
-        let mut seen = HashSet::new();
-        self.current_nodes = self
-            .current_nodes
-            .iter()
-            .flat_map(|c| c.iter_parents())
-            .filter(|n| seen.insert(n.get_id()))
-            .collect();
-        self.finished = self.current_nodes.is_empty();
-        result
-    }
-}
-struct IterChildren<N> {
-    node: Rc<TreeNode<N>>,
-    len_children: usize,
-    child_index: usize,
-    finished: bool,
-}
-impl<N: PartialEq> IterChildren<N> {
-    fn new(node: Rc<TreeNode<N>>) -> Self {
-        let len_children = node.len_children();
-        IterChildren {
-            node,
-            len_children,
-            child_index: 0,
-            finished: false,
-        }
-    }
-}
-impl<N: PartialEq> Iterator for IterChildren<N> {
-    type Item = Rc<TreeNode<N>>;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.finished {
-            return None;
-        }
-        match self.node.get_child(self.child_index) {
-            Some(node) => {
-                self.child_index += 1;
-                Some(node)
-            }
-            None => {
-                self.finished = true;
-                None
-            }
-        }
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(self.len_children))
-    }
-}
-impl<N: PartialEq + Copy + Clone> ExactSizeIterator for IterChildren<N> {
-    fn len(&self) -> usize {
-        self.len_children
-    }
-}
-struct IterParents<N> {
-    node: Rc<TreeNode<N>>,
-    len_parents: usize,
-    parent_index: usize,
-    finished: bool,
-}
-impl<N: PartialEq> IterParents<N> {
-    fn new(node: Rc<TreeNode<N>>) -> Self {
-        let len_parents = node.len_parents();
-        IterParents {
-            node,
-            len_parents,
-            parent_index: 0,
-            finished: false,
-        }
-    }
-}
-impl<N: PartialEq> Iterator for IterParents<N> {
-    type Item = Rc<TreeNode<N>>;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.finished {
-            return None;
-        }
-        while self.parent_index < self.len_parents {
-            let parent = self.node.get_parent(self.parent_index);
-            self.parent_index += 1;
-            if parent.is_none() {
-                continue;
-            }
-            return parent;
-        }
-        self.finished = true;
-        None
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(self.len_parents))
-    }
-}
-impl<N: PartialEq + Copy + Clone> ExactSizeIterator for IterParents<N> {
-    fn len(&self) -> usize {
-        self.len_parents
-    }
-}
-struct LevelOrderTraversal<N> {
-    current_node: Rc<TreeNode<N>>,
-    child_indices: Vec<usize>,
-    parent_ids: Vec<usize>,
-    vertical: bool,
-    finished: bool,
-    target_level: usize,
-    end_level: Option<usize>,
-    node_on_target_level: bool,
-}
-impl<N: PartialEq> LevelOrderTraversal<N> {
-    fn new(start_node: Rc<TreeNode<N>>, start_level: usize, end_level: Option<usize>) -> Self {
-        if let Some(level) = end_level {
-            if start_level > level {
-                panic!("end_level must be >= start_level.");
-            }
-        }
-        let vec_capacity = start_node.get_max_level();
-        let mut child_indices: Vec<usize> = Vec::with_capacity(vec_capacity);
-        child_indices.push(0);
-        LevelOrderTraversal {
-            current_node: start_node,
-            child_indices,
-            parent_ids: Vec::with_capacity(vec_capacity),
-            vertical: false,
-            finished: false,
-            target_level: start_level,
-            end_level,
-            node_on_target_level: false,
-        }
-    }
-    fn increment_target_level(&mut self) -> bool {
-        if let Some(level) = self.end_level {
-            if self.target_level == level {
-                self.finished = true;
-                return true;
-            }
-        }
-        self.target_level += 1;
-        false
-    }
-}
-impl<N: PartialEq> Iterator for LevelOrderTraversal<N> {
-    type Item = (Rc<TreeNode<N>>, usize);
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.finished {
-            return None;
-        }
-        loop {
-            if self.vertical {
-                match self.parent_ids.pop() {
-                    Some(parent_id) => {
-                        self.child_indices.pop();
-                        let last_child_index = self.child_indices.len() - 1;
-                        self.child_indices[last_child_index] += 1;
-                        self.current_node = self.current_node.get_parent_by_id(parent_id).unwrap();
-                    }
-                    None => {
-                        if self.node_on_target_level {
-                            if self.increment_target_level() {
-                                return None;
-                            }
-                            self.node_on_target_level = false;
-                            assert_eq!(self.child_indices.len(), 1);
-                            self.child_indices[0] = 0;
-                        } else {
-                            self.finished = true;
-                            return None;
-                        }
-                    }
-                }
-                self.vertical = false;
-            } else {
-                if self.child_indices.len() - 1 == self.target_level {
-                    self.node_on_target_level = true;
-                    self.vertical = true;
-                    return self.current_node.get_self().map(|n| (n, self.target_level));
-                }
-                let child_index = self.child_indices[self.child_indices.len() - 1];
-                match self.current_node.get_child(child_index) {
-                    Some(node) => {
-                        self.parent_ids.push(self.current_node.get_id());
-                        self.current_node = node;
-                        self.child_indices.push(0);
-                    }
-                    None => self.vertical = true,
-                }
-            }
-        }
-    }
-}
-use std::cell::RefCell;
-struct TreeNode<N> {
-    value: RefCell<N>,
-    id: usize,
-    level: usize,
-    max_level: Rc<RefCell<usize>>,
-    node: RefCell<Weak<TreeNode<N>>>,
-    parents: RefCell<Vec<Weak<TreeNode<N>>>>,
-    children: RefCell<Vec<Rc<TreeNode<N>>>>,
-}
-impl<N: PartialEq> TreeNode<N> {
-    fn seed_root(value: N, children_capacity: usize) -> Rc<TreeNode<N>> {
-        TreeNode::new(value, Weak::new(), children_capacity)
-    }
-    fn new(value: N, parent: Weak<TreeNode<N>>, children_capacity: usize) -> Rc<TreeNode<N>> {
-        let (level, max_level, parents) = match parent.upgrade() {
-            Some(p) => {
-                let new_level = p.get_level() + 1;
-                let mut current_max_level = (*p.max_level).borrow_mut();
-                *current_max_level = current_max_level.max(new_level);
-                (new_level, p.max_level.clone(), RefCell::new(vec![parent]))
-            }
-            None => (
-                0,
-                Rc::new(RefCell::new(0_usize)),
-                RefCell::new(Vec::with_capacity(1)),
-            ),
-        };
-        let result = Rc::new(TreeNode {
-            value: RefCell::new(value),
-            id: generate_unique_id(),
-            level,
-            max_level,
-            node: RefCell::new(Weak::new()),
-            parents,
-            children: RefCell::new(Vec::with_capacity(children_capacity)),
-        });
-        let node = Rc::downgrade(&result);
-        *result.node.borrow_mut() = node;
-        result
-    }
-    fn add_child(&self, value: N, children_capacity: usize) -> Rc<TreeNode<N>> {
-        match self.iter_children().find(|n| *n.value.borrow() == value) {
-            Some(node) => node,
-            None => {
-                let child = TreeNode::new(value, self.node.borrow().clone(), children_capacity);
-                self.children.borrow_mut().push(child.clone());
-                child
-            }
-        }
-    }
-    fn link_child_to_parent(&self, child: Rc<TreeNode<N>>) -> Option<Rc<TreeNode<N>>> {
-        if self.level + 1 != child.level {
-            return None;
-        }
-        if !child.iter_parents().any(|p| p.id == self.id)
-            && !self.iter_children().any(|c| c.id == child.id)
-        {
-            child.parents.borrow_mut().push(self.node.borrow().clone());
-            self.children.borrow_mut().push(child.clone());
-        }
-        Some(child)
-    }
-    fn swap_remove_child(&self, index: usize) -> Option<Rc<TreeNode<N>>> {
-        if index >= self.len_children() {
-            return None;
-        }
-        let result = self.children.borrow_mut().swap_remove(index);
-        Some(result)
-    }
-    fn split_off_children(&self, at: usize, keep_split_off: bool) {
-        let split_off = self.children.borrow_mut().split_off(at);
-        if keep_split_off {
-            *self.children.borrow_mut() = split_off;
-        }
-    }
-    fn clear_children(&self, children_capacity: usize) {
-        *self.children.borrow_mut() = Vec::with_capacity(children_capacity);
-    }
-    fn get_value(&self) -> std::cell::Ref<'_, N> {
-        self.value.borrow()
-    }
-    fn get_mut_value(&self) -> std::cell::RefMut<'_, N> {
-        self.value.borrow_mut()
-    }
-    fn get_id(&self) -> usize {
-        self.id
-    }
-    fn get_level(&self) -> usize {
-        self.level
-    }
-    fn get_self(&self) -> Option<Rc<TreeNode<N>>> {
-        self.node.borrow().upgrade().as_ref().cloned()
-    }
-    fn get_child(&self, index: usize) -> Option<Rc<TreeNode<N>>> {
-        self.children.borrow().get(index).cloned()
-    }
-    fn len_children(&self) -> usize {
-        self.children.borrow().len()
-    }
-    fn get_parent(&self, index: usize) -> Option<Rc<TreeNode<N>>> {
-        self.parents
-            .borrow()
-            .get(index)?
-            .upgrade()
-            .as_ref()
-            .cloned()
-    }
-    fn get_parent_by_id(&self, id: usize) -> Option<Rc<TreeNode<N>>> {
-        self.iter_parents().find(|c| c.get_id() == id)
-    }
-    fn len_parents(&self) -> usize {
-        self.parents.borrow().len()
-    }
-    fn is_leave(&self) -> bool {
-        self.len_children() == 0
-    }
-    fn get_max_level(&self) -> usize {
-        *self.max_level.borrow()
-    }
-    fn iter_children(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> {
-        IterChildren::new(self.get_self().unwrap())
-    }
-    fn iter_parents(&self) -> impl Iterator<Item = Rc<TreeNode<N>>> {
-        IterParents::new(self.get_self().unwrap())
-    }
-    fn iter_back_track(&self) -> impl Iterator<Item = Vec<Rc<TreeNode<N>>>> {
-        BackTrack::new(self.get_self().unwrap())
-    }
-    fn iter_level_order_traversal_with_borders(
-        &self,
-        start_level: usize,
-        end_level: Option<usize>,
-    ) -> impl Iterator<Item = (Rc<TreeNode<N>>, usize)> {
-        LevelOrderTraversal::new(self.get_self().unwrap(), start_level, end_level)
-    }
-}
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering as AtomicOrdering;
-static GLOBAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
-fn generate_unique_id() -> usize {
-    GLOBAL_COUNTER.fetch_add(1, AtomicOrdering::SeqCst)
 }
