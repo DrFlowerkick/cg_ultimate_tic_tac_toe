@@ -58,7 +58,6 @@ include = [
     "forward_x",
     "get@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "get_cell_value@impl TicTacToeGameData",
-    "get_cell_value@impl UltTTT",
     "get_children",
     "get_first_vacant_cell",
     "get_mut@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
@@ -80,6 +79,7 @@ include = [
     "y"
 ]
 exclude = [
+    "get_cell_value@impl UltTTT",
     "iter_diagonal_top_left@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "iter_diagonal_top_right@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "next_player@impl TicTacToeGameData",
@@ -103,10 +103,10 @@ include = [
 ]
 exclude = [
     "impl Display for UltTTT",
-    "impl std::fmt::Display for TicTacToeStatus",
     "impl MCTSTurnBasedGame for TicTacToeMCTSGame",
     "impl MonteCarloGameData for TicTacToeGameData",
     "impl std::fmt::Display for TicTacToeGameData",
+    "impl std::fmt::Display for TicTacToeStatus",
     "impl<T:Copy+Clone+Default+Display,constX:usize,constY:usize> Display for MyMap2D<T,X,Y>",
     "impl<T:Copy+Clone+Default+From<char>,constX:usize,constY:usize> From<&str> for MyMap2D<T,X,Y>",
     "impl<constX:usize,constY:usize> Display for MapPoint<X,Y>",

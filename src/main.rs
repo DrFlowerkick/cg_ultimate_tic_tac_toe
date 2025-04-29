@@ -72,7 +72,7 @@ fn main() {
             number_of_iterations += 1;
         }
         let selected_move = mcts_ult_ttt.select_move();
-        game_data = UltTTTMCTSGame::apply_move(&game_data, &selected_move);
+        game_data = UltTTTMCTSGame::apply_move(&game_data, selected_move);
         selected_move.execute_action();
 
         eprintln!("Iterations: {}", number_of_iterations);
