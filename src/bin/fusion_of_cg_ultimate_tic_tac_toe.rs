@@ -1,4 +1,6 @@
 use std::io;
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 macro_rules! parse_input {
@@ -9,17 +11,21 @@ macro_rules! parse_input {
 fn main() {
     let max_number_of_turns = 81;
     let weighting_factor = 1.4;
-    let time_out_first_turn = Duration::from_millis(995);
-    let time_out_successive_turns = Duration::from_millis(95);
-    let mut first_turn = true;
+    let time_out_first_turn = Duration::from_millis(990);
+    let time_out_successive_turns = Duration::from_millis(90);
+    let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame> = TurnBasedMCTS::new(weighting_factor);
-    loop {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || loop {
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let inputs = input_line.split(' ').collect::<Vec<_>>();
         let opponent_row = parse_input!(inputs[0], i32);
         let opponent_col = parse_input!(inputs[1], i32);
+        if tx.send((opponent_row, opponent_col)).is_err() {
+            break;
+        }
         let mut input_line = String::new();
         io::stdin().read_line(&mut input_line).unwrap();
         let valid_action_count = parse_input!(input_line, i32);
@@ -30,35 +36,55 @@ fn main() {
             let _row = parse_input!(inputs[0], i32);
             let _col = parse_input!(inputs[1], i32);
         }
-        let time_out = if first_turn {
-            if opponent_row >= 0 {
-                game_data.set_current_player(MonteCarloPlayer::Opp);
-                let opp_action =
-                    MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-                game_data = UltTTTMCTSGame::apply_move(
-                    &game_data,
-                    &UltTTTPlayerAction::from_ext(opp_action),
-                );
-            }
-            time_out_first_turn
-        } else {
-            let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-            game_data =
-                UltTTTMCTSGame::apply_move(&game_data, &UltTTTPlayerAction::from_ext(opp_action));
-            time_out_successive_turns
-        };
-        let start = Instant::now();
+    });
+    let (opponent_row, opponent_col) = rx.recv().expect("Failed to receive initial input");
+    if opponent_row >= 0 {
+        game_data.set_current_player(MonteCarloPlayer::Opp);
+        let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
+        game_data =
+            UltTTTMCTSGame::apply_move(&game_data, &UltTTTPlayerAction::from_ext(opp_action));
+    }
+    let mut time_out = time_out_first_turn;
+    loop {
         mcts_ult_ttt.set_root(&game_data);
+        let start = Instant::now();
         let mut number_of_iterations = 0;
         while start.elapsed() < time_out {
             mcts_ult_ttt.iterate();
             number_of_iterations += 1;
         }
+        eprintln!("Iterations: {}", number_of_iterations);
+        time_out = time_out_successive_turns;
         let selected_move = mcts_ult_ttt.select_move();
         game_data = UltTTTMCTSGame::apply_move(&game_data, selected_move);
         selected_move.execute_action();
-        eprintln!("Iterations: {}", number_of_iterations);
-        first_turn = false;
+        mcts_ult_ttt.set_root(&game_data);
+        let start = Instant::now();
+        number_of_iterations = 0;
+        loop {
+            match rx.try_recv() {
+                Ok((opponent_row, opponent_col)) => {
+                    let opp_action =
+                        MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
+                    game_data = UltTTTMCTSGame::apply_move(
+                        &game_data,
+                        &UltTTTPlayerAction::from_ext(opp_action),
+                    );
+                    break;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    mcts_ult_ttt.iterate();
+                    number_of_iterations += 1;
+                    if start.elapsed() > time_out_codingame_input {
+                        panic!("Timeout while waiting for codingame input");
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    panic!("Codingame input thread disconnected");
+                }
+            }
+        }
+        eprintln!("Pre-Fill Iterations: {}", number_of_iterations);
         assert!(game_data.game_turn <= max_number_of_turns);
     }
 }
