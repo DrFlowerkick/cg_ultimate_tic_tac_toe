@@ -292,12 +292,6 @@ impl Display for UltTTT {
 // solving TicTacToe with new MCTS traits
 pub struct UltTTTMCTSGame {}
 
-impl MCTSTurnBasedGame for UltTTTMCTSGame {
-    fn current_player(state: &Self::State) -> MonteCarloPlayer {
-        state.current_player
-    }
-}
-
 impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTPlayerAction;
@@ -332,6 +326,9 @@ impl MCTSGame for UltTTTMCTSGame {
 
     fn is_terminal(state: &Self::State) -> bool {
         state.status.is_not_vacant()
+    }
+    fn current_player(state: &Self::State) -> MonteCarloPlayer {
+        state.current_player
     }
 }
 
