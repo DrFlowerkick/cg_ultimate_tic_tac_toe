@@ -295,6 +295,7 @@ pub struct UltTTTMCTSGame {}
 impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTPlayerAction;
+    type Player = MonteCarloPlayer;
 
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
         Box::new(IterUltTTT::new(
@@ -330,11 +331,16 @@ impl MCTSGame for UltTTTMCTSGame {
     fn current_player(state: &Self::State) -> MonteCarloPlayer {
         state.current_player
     }
+    fn perspective_player() -> Self::Player {
+        MonteCarloPlayer::Me
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use my_lib::my_monte_carlo_tree_search::{MCTSAlgo, TurnBasedMCTS};
+    use my_lib::my_monte_carlo_tree_search::{
+        DynamicC, MCTSAlgo, NoCache, StaticC, TurnBasedMCTS, WithCache,
+    };
     use std::time::{Duration, Instant};
 
     use super::*;
@@ -346,15 +352,15 @@ mod tests {
         const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
 
         let mut wins = 0.0;
-        let number_of_matches = 1;
+        let number_of_matches = 10;
         for i in 0..number_of_matches {
             eprintln!("________match {}________", i + 1);
-            let mut first_mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame> =
+            let mut first_mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, DynamicC, WithCache> =
                 TurnBasedMCTS::new(WEIGHTING_FACTOR);
             let mut first_ult_ttt_game_data = UltTTT::new();
             first_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Me);
             let mut first_time_out = TIME_OUT_FIRST_TURN;
-            let mut second_mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame> =
+            let mut second_mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, StaticC, NoCache> =
                 TurnBasedMCTS::new(WEIGHTING_FACTOR);
             let mut second_ult_ttt_game_data = UltTTT::new();
             second_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Opp);

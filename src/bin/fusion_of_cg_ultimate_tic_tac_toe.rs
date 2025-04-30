@@ -15,7 +15,8 @@ fn main() {
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
-    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame> = TurnBasedMCTS::new(weighting_factor);
+    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, DynamicC, WithCache> =
+        TurnBasedMCTS::new(weighting_factor);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || loop {
         let mut input_line = String::new();
@@ -307,14 +308,10 @@ impl UltTTT {
     }
 }
 struct UltTTTMCTSGame {}
-impl MCTSTurnBasedGame for UltTTTMCTSGame {
-    fn current_player(state: &Self::State) -> MonteCarloPlayer {
-        state.current_player
-    }
-}
 impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTPlayerAction;
+    type Player = MonteCarloPlayer;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
         Box::new(IterUltTTT::new(
             state,
@@ -339,6 +336,12 @@ impl MCTSGame for UltTTTMCTSGame {
     }
     fn is_terminal(state: &Self::State) -> bool {
         state.status.is_not_vacant()
+    }
+    fn current_player(state: &Self::State) -> MonteCarloPlayer {
+        state.current_player
+    }
+    fn perspective_player() -> Self::Player {
+        MonteCarloPlayer::Me
     }
 }
 use std::cmp::Ordering;
@@ -490,16 +493,72 @@ impl MonteCarloPlayer {
         }
     }
 }
+impl MCTSPlayer for MonteCarloPlayer {
+    fn next(&self) -> Self {
+        match self {
+            MonteCarloPlayer::Me => MonteCarloPlayer::Opp,
+            MonteCarloPlayer::Opp => MonteCarloPlayer::Me,
+        }
+    }
+}
+struct StaticC {}
+impl<G: MCTSGame> UCTPolicy<G> for StaticC {}
+struct DynamicC {}
+impl<G: MCTSGame> UCTPolicy<G> for DynamicC {
+    fn exploration_score(visits: usize, parent_visits: usize, c: f32) -> f32 {
+        let dynamic_c = c / (1.0 + (visits as f32).sqrt());
+        dynamic_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
+    }
+}
+struct WithCache {
+    exploitation: f32,
+    exploration: f32,
+    last_parent_visits: usize,
+}
+impl<G: MCTSGame, P: UCTPolicy<G>> MCTSCache<G, P> for WithCache {
+    fn new() -> Self {
+        WithCache {
+            exploitation: 0.0,
+            exploration: 0.0,
+            last_parent_visits: 0,
+        }
+    }
+    fn update_exploitation(
+        &mut self,
+        visits: usize,
+        acc_value: f32,
+        current_player: G::Player,
+        perspective_player: G::Player,
+    ) {
+        self.exploitation =
+            P::exploitation_score(acc_value, visits, current_player, perspective_player);
+    }
+    fn get_exploitation(&self, _v: usize, _a: f32, _c: G::Player, _p: G::Player) -> f32 {
+        self.exploitation
+    }
+    fn update_exploration(&mut self, visits: usize, parent_visits: usize, base_c: f32) {
+        if self.last_parent_visits != parent_visits {
+            self.exploration = P::exploration_score(visits, parent_visits, base_c);
+            self.last_parent_visits = parent_visits;
+        }
+    }
+    fn get_exploration(&self, _v: usize, _p: usize, _b: f32) -> f32 {
+        self.exploration
+    }
+}
+trait MCTSPlayer: PartialEq {
+    fn next(&self) -> Self;
+}
 trait MCTSGame {
     type State: Clone + PartialEq;
     type Move;
+    type Player: MCTSPlayer;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a>;
     fn apply_move(state: &Self::State, mv: &Self::Move) -> Self::State;
     fn is_terminal(state: &Self::State) -> bool;
     fn evaluate(state: &Self::State) -> f32;
-}
-trait MCTSTurnBasedGame: MCTSGame {
-    fn current_player(state: &Self::State) -> MonteCarloPlayer;
+    fn current_player(state: &Self::State) -> Self::Player;
+    fn perspective_player() -> Self::Player;
 }
 trait MCTSNode<G: MCTSGame> {
     fn get_state(&self) -> &G::State;
@@ -516,15 +575,54 @@ trait MCTSAlgo<G: MCTSGame> {
     fn set_root(&mut self, state: &G::State) -> bool;
     fn select_move(&self) -> &G::Move;
 }
+trait UCTPolicy<G: MCTSGame> {
+    fn exploitation_score(
+        accumulated_value: f32,
+        visits: usize,
+        current_player: G::Player,
+        perspective_player: G::Player,
+    ) -> f32 {
+        let raw = accumulated_value / visits as f32;
+        if current_player == perspective_player {
+            1.0 - raw
+        } else {
+            raw
+        }
+    }
+    fn exploration_score(visits: usize, parent_visits: usize, base_c: f32) -> f32 {
+        base_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
+    }
+}
+trait MCTSCache<G: MCTSGame, P: UCTPolicy<G>> {
+    fn new() -> Self;
+    fn update_exploitation(
+        &mut self,
+        visits: usize,
+        acc_value: f32,
+        current_player: G::Player,
+        perspective_player: G::Player,
+    );
+    fn get_exploitation(
+        &self,
+        visits: usize,
+        acc_value: f32,
+        current_player: G::Player,
+        perspective_player: G::Player,
+    ) -> f32;
+    fn update_exploration(&mut self, visits: usize, parent_visits: usize, base_c: f32);
+    fn get_exploration(&self, visits: usize, parent_visits: usize, base_c: f32) -> f32;
+}
 use rand::prelude::IteratorRandom;
-struct TurnBasedNode<G: MCTSTurnBasedGame> {
+struct TurnBasedNode<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> {
     state: G::State,
     visits: usize,
     accumulated_value: f32,
     mv: Option<G::Move>,
     children: Vec<usize>,
+    cache: C,
+    phantom: std::marker::PhantomData<P>,
 }
-impl<G: MCTSTurnBasedGame> MCTSNode<G> for TurnBasedNode<G> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> MCTSNode<G> for TurnBasedNode<G, P, C> {
     fn get_state(&self) -> &G::State {
         &self.state
     }
@@ -539,12 +637,18 @@ impl<G: MCTSTurnBasedGame> MCTSNode<G> for TurnBasedNode<G> {
     }
     fn add_simulation_result(&mut self, result: f32) {
         self.accumulated_value += result;
+        self.cache.update_exploitation(
+            self.visits,
+            self.accumulated_value,
+            G::current_player(&self.state),
+            G::perspective_player(),
+        );
     }
     fn increment_visits(&mut self) {
         self.visits += 1;
     }
 }
-impl<G: MCTSTurnBasedGame> TurnBasedNode<G> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> TurnBasedNode<G, P, C> {
     fn root_node(state: G::State) -> Self {
         TurnBasedNode {
             state,
@@ -552,6 +656,8 @@ impl<G: MCTSTurnBasedGame> TurnBasedNode<G> {
             accumulated_value: 0.0,
             mv: None,
             children: vec![],
+            cache: C::new(),
+            phantom: std::marker::PhantomData,
         }
     }
     fn new(state: G::State, mv: G::Move) -> Self {
@@ -561,6 +667,8 @@ impl<G: MCTSTurnBasedGame> TurnBasedNode<G> {
             accumulated_value: 0.0,
             mv: Some(mv),
             children: vec![],
+            cache: C::new(),
+            phantom: std::marker::PhantomData,
         }
     }
     fn add_child(&mut self, child_index: usize) {
@@ -569,25 +677,27 @@ impl<G: MCTSTurnBasedGame> TurnBasedNode<G> {
     fn get_children(&self) -> &Vec<usize> {
         &self.children
     }
-    fn calc_utc(&self, parent_visits: usize, c: f32) -> f32 {
+    fn calc_utc(&mut self, parent_visits: usize, c: f32, perspective_player: G::Player) -> f32 {
         if self.visits == 0 {
             return f32::INFINITY;
         }
-        let raw_exploitation = self.accumulated_value / self.visits as f32;
-        let exploitation = match G::current_player(&self.state) {
-            MonteCarloPlayer::Me => 1.0 - raw_exploitation,
-            MonteCarloPlayer::Opp => raw_exploitation,
-        };
-        let exploration = c * ((parent_visits as f32).ln() / self.visits as f32).sqrt();
+        let exploitation = self.cache.get_exploitation(
+            self.visits,
+            self.accumulated_value,
+            G::current_player(&self.state),
+            perspective_player,
+        );
+        self.cache.update_exploration(self.visits, parent_visits, c);
+        let exploration = self.cache.get_exploration(self.visits, parent_visits, c);
         exploitation + exploration
     }
 }
-struct TurnBasedMCTS<G: MCTSTurnBasedGame> {
-    nodes: Vec<TurnBasedNode<G>>,
+struct TurnBasedMCTS<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> {
+    nodes: Vec<TurnBasedNode<G, P, C>>,
     root_index: usize,
     exploration_constant: f32,
 }
-impl<G: MCTSTurnBasedGame> TurnBasedMCTS<G> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> TurnBasedMCTS<G, P, C> {
     fn new(exploration_constant: f32) -> Self {
         Self {
             nodes: vec![],
@@ -596,7 +706,7 @@ impl<G: MCTSTurnBasedGame> TurnBasedMCTS<G> {
         }
     }
 }
-impl<G: MCTSTurnBasedGame> MCTSAlgo<G> for TurnBasedMCTS<G> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> MCTSAlgo<G> for TurnBasedMCTS<G, P, C> {
     fn iterate(&mut self) {
         let mut path = vec![self.root_index];
         let mut current_index = self.root_index;
@@ -604,9 +714,13 @@ impl<G: MCTSTurnBasedGame> MCTSAlgo<G> for TurnBasedMCTS<G> {
             let parent_visits = self.nodes[current_index].get_visits();
             let mut best_child_index = 0;
             let mut best_utc = f32::NEG_INFINITY;
-            for &child_index in self.nodes[current_index].get_children() {
-                let utc =
-                    self.nodes[child_index].calc_utc(parent_visits, self.exploration_constant);
+            for vec_index in 0..self.nodes[current_index].get_children().len() {
+                let child_index = self.nodes[current_index].get_children()[vec_index];
+                let utc = self.nodes[child_index].calc_utc(
+                    parent_visits,
+                    self.exploration_constant,
+                    G::perspective_player(),
+                );
                 if utc > best_utc {
                     best_utc = utc;
                     best_child_index = child_index;

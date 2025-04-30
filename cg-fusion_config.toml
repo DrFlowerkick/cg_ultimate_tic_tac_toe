@@ -50,7 +50,7 @@
 # pulled into the fusion automatically.
 [impl_items]
 include = [
-    "add_child@impl<G:MCTSTurnBasedGame> TurnBasedNode<G>",
+    "add_child@impl<G:MCTSGame,P:UCTPolicy<G>,C:MCTSCache<G,P>> TurnBasedNode<G,P,C>",
     "calc_utc",
     "count_player_cells",
     "execute_action@impl UltTTTPlayerAction",
@@ -67,8 +67,8 @@ include = [
     "iter@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "iter_column@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
     "iter_row@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
-    "new@impl<G:MCTSTurnBasedGame> TurnBasedMCTS<G>",
-    "new@impl<G:MCTSTurnBasedGame> TurnBasedNode<G>",
+    "new@impl<G:MCTSGame,P:UCTPolicy<G>,C:MCTSCache<G,P>> TurnBasedMCTS<G,P,C>",
+    "new@impl<G:MCTSGame,P:UCTPolicy<G>,C:MCTSCache<G,P>> TurnBasedNode<G,P,C>",
     "next_player@impl MonteCarloPlayer",
     "next_player@impl UltTTT",
     "set_all_to_status",
@@ -88,25 +88,28 @@ exclude = [
 [impl_blocks]
 include = [
     "impl MCTSGame for TicTacToeMCTSGame",
-    "impl MCTSTurnBasedGame for UltTTTMCTSGame",
+    "impl MCTSPlayer for MonteCarloPlayer",
     "impl MonteCarloPlayer",
     "impl TicTacToeGameData",
     "impl TicTacToeStatus",
     "impl<'a> Iterator for IterUltTTT<'a>",
-    "impl<G:MCTSTurnBasedGame> MCTSAlgo<G> for TurnBasedMCTS<G>",
-    "impl<G:MCTSTurnBasedGame> MCTSNode<G> for TurnBasedNode<G>",
-    "impl<G:MCTSTurnBasedGame> TurnBasedMCTS<G>",
-    "impl<G:MCTSTurnBasedGame> TurnBasedNode<G>",
+    "impl<G:MCTSGame,P:UCTPolicy<G>,C:MCTSCache<G,P>> MCTSAlgo<G> for TurnBasedMCTS<G,P,C>",
+    "impl<G:MCTSGame,P:UCTPolicy<G>,C:MCTSCache<G,P>> MCTSNode<G> for TurnBasedNode<G,P,C>",
+    "impl<G:MCTSGame,P:UCTPolicy<G>,C:MCTSCache<G,P>> TurnBasedMCTS<G,P,C>",
+    "impl<G:MCTSGame,P:UCTPolicy<G>,C:MCTSCache<G,P>> TurnBasedNode<G,P,C>",
+    "impl<G:MCTSGame,P:UCTPolicy<G>> MCTSCache<G,P> for WithCache",
+    "impl<G:MCTSGame> UCTPolicy<G> for DynamicC",
+    "impl<G:MCTSGame> UCTPolicy<G> for StaticC",
     "impl<T:Copy+Clone+Default,constX:usize,constY:usize> Default for MyMap2D<T,X,Y>",
     "impl<constX:usize,constY:usize> From<(usize,usize)> for MapPoint<X,Y>",
     "impl<constX:usize,constY:usize> PartialOrd for MapPoint<X,Y>"
 ]
 exclude = [
     "impl Display for UltTTT",
-    "impl MCTSTurnBasedGame for TicTacToeMCTSGame",
     "impl MonteCarloGameData for TicTacToeGameData",
     "impl std::fmt::Display for TicTacToeGameData",
     "impl std::fmt::Display for TicTacToeStatus",
+    "impl<G:MCTSGame,P:UCTPolicy<G>> MCTSCache<G,P> for NoCache",
     "impl<T:Copy+Clone+Default+Display,constX:usize,constY:usize> Display for MyMap2D<T,X,Y>",
     "impl<T:Copy+Clone+Default+From<char>,constX:usize,constY:usize> From<&str> for MyMap2D<T,X,Y>",
     "impl<constX:usize,constY:usize> Display for MapPoint<X,Y>",
