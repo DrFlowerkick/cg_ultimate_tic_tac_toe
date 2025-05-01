@@ -3,6 +3,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
+type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
 macro_rules! parse_input {
     ($ x : expr , $ t : ident) => {
         $x.trim().parse::<$t>().unwrap()
@@ -15,7 +16,7 @@ fn main() {
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
-    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, DynamicC, WithCache> =
+    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, DynamicC, WithCache, PWDefaultTTT> =
         TurnBasedMCTS::new(weighting_factor);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || loop {
@@ -479,6 +480,7 @@ impl<T: Copy + Clone + Default, const X: usize, const Y: usize> Default for MyMa
         Self::new()
     }
 }
+use rand::prelude::SliceRandom;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 enum MonteCarloPlayer {
     #[default]
@@ -544,6 +546,67 @@ impl<G: MCTSGame, P: UCTPolicy<G>> MCTSCache<G, P> for WithCache {
     }
     fn get_exploration(&self, _v: usize, _p: usize, _b: f32) -> f32 {
         self.exploration
+    }
+}
+struct ExpandAll<G: MCTSGame> {
+    moves: Vec<G::Move>,
+}
+impl<G: MCTSGame> ExpansionPolicy<G> for ExpandAll<G> {
+    fn new(state: &<G as MCTSGame>::State) -> Self {
+        let moves = if G::is_terminal(state) {
+            vec![]
+        } else {
+            G::available_moves(state).collect::<Vec<_>>()
+        };
+        ExpandAll { moves }
+    }
+    fn should_expand(&self, _v: usize, _n: usize) -> bool {
+        !self.moves.is_empty()
+    }
+    fn pop_expandable_move(&mut self, _v: usize, _n: usize) -> Option<<G as MCTSGame>::Move> {
+        self.moves.pop()
+    }
+}
+struct ProgressiveWidening<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> {
+    unexpanded_moves: Vec<G::Move>,
+}
+type PWDefault<G> = ProgressiveWidening<2, 1, 2, G>;
+impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame>
+    ProgressiveWidening<C, AN, AD, G>
+{
+    fn allowed_children(visits: usize) -> usize {
+        if visits == 0 {
+            1
+        } else {
+            (C as f32 * (visits as f32).powf(AN as f32 / AD as f32)).floor() as usize
+        }
+    }
+}
+impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> ExpansionPolicy<G>
+    for ProgressiveWidening<C, AN, AD, G>
+{
+    fn new(state: &<G as MCTSGame>::State) -> Self {
+        let unexpanded_moves = if G::is_terminal(state) {
+            vec![]
+        } else {
+            let mut unexpanded_moves = G::available_moves(state).collect::<Vec<_>>();
+            unexpanded_moves.shuffle(&mut rand::thread_rng());
+            unexpanded_moves
+        };
+        ProgressiveWidening { unexpanded_moves }
+    }
+    fn should_expand(&self, visits: usize, num_parent_children: usize) -> bool {
+        num_parent_children < Self::allowed_children(visits) && !self.unexpanded_moves.is_empty()
+    }
+    fn pop_expandable_move(
+        &mut self,
+        visits: usize,
+        num_parent_children: usize,
+    ) -> Option<<G as MCTSGame>::Move> {
+        if !self.should_expand(visits, num_parent_children) {
+            return None;
+        }
+        self.unexpanded_moves.pop()
     }
 }
 trait MCTSPlayer: PartialEq {
@@ -612,17 +675,26 @@ trait MCTSCache<G: MCTSGame, P: UCTPolicy<G>> {
     fn update_exploration(&mut self, visits: usize, parent_visits: usize, base_c: f32);
     fn get_exploration(&self, visits: usize, parent_visits: usize, base_c: f32) -> f32;
 }
+trait ExpansionPolicy<G: MCTSGame> {
+    fn new(state: &G::State) -> Self;
+    fn should_expand(&self, visits: usize, num_parent_children: usize) -> bool;
+    fn pop_expandable_move(&mut self, visits: usize, num_parent_children: usize)
+        -> Option<G::Move>;
+}
 use rand::prelude::IteratorRandom;
-struct TurnBasedNode<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> {
+struct TurnBasedNode<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>, E: ExpansionPolicy<G>> {
     state: G::State,
     visits: usize,
     accumulated_value: f32,
     mv: Option<G::Move>,
     children: Vec<usize>,
     cache: C,
+    expansion_policy: E,
     phantom: std::marker::PhantomData<P>,
 }
-impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> MCTSNode<G> for TurnBasedNode<G, P, C> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>, E: ExpansionPolicy<G>> MCTSNode<G>
+    for TurnBasedNode<G, P, C, E>
+{
     fn get_state(&self) -> &G::State {
         &self.state
     }
@@ -648,9 +720,12 @@ impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> MCTSNode<G> for TurnBased
         self.visits += 1;
     }
 }
-impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> TurnBasedNode<G, P, C> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>, E: ExpansionPolicy<G>>
+    TurnBasedNode<G, P, C, E>
+{
     fn root_node(state: G::State) -> Self {
         TurnBasedNode {
+            expansion_policy: E::new(&state),
             state,
             visits: 0,
             accumulated_value: 0.0,
@@ -662,6 +737,7 @@ impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> TurnBasedNode<G, P, C> {
     }
     fn new(state: G::State, mv: G::Move) -> Self {
         TurnBasedNode {
+            expansion_policy: E::new(&state),
             state,
             visits: 0,
             accumulated_value: 0.0,
@@ -692,12 +768,14 @@ impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> TurnBasedNode<G, P, C> {
         exploitation + exploration
     }
 }
-struct TurnBasedMCTS<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> {
-    nodes: Vec<TurnBasedNode<G, P, C>>,
+struct TurnBasedMCTS<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>, E: ExpansionPolicy<G>> {
+    nodes: Vec<TurnBasedNode<G, P, C, E>>,
     root_index: usize,
     exploration_constant: f32,
 }
-impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> TurnBasedMCTS<G, P, C> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>, E: ExpansionPolicy<G>>
+    TurnBasedMCTS<G, P, C, E>
+{
     fn new(exploration_constant: f32) -> Self {
         Self {
             nodes: vec![],
@@ -706,15 +784,24 @@ impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> TurnBasedMCTS<G, P, C> {
         }
     }
 }
-impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> MCTSAlgo<G> for TurnBasedMCTS<G, P, C> {
+impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>, E: ExpansionPolicy<G>> MCTSAlgo<G>
+    for TurnBasedMCTS<G, P, C, E>
+{
     fn iterate(&mut self) {
         let mut path = vec![self.root_index];
         let mut current_index = self.root_index;
         while !self.nodes[current_index].get_children().is_empty() {
             let parent_visits = self.nodes[current_index].get_visits();
+            let num_parent_children = self.nodes[current_index].get_children().len();
+            if self.nodes[current_index]
+                .expansion_policy
+                .should_expand(parent_visits, num_parent_children)
+            {
+                break;
+            }
             let mut best_child_index = 0;
             let mut best_utc = f32::NEG_INFINITY;
-            for vec_index in 0..self.nodes[current_index].get_children().len() {
+            for vec_index in 0..num_parent_children {
                 let child_index = self.nodes[current_index].get_children()[vec_index];
                 let utc = self.nodes[child_index].calc_utc(
                     parent_visits,
@@ -734,9 +821,13 @@ impl<G: MCTSGame, P: UCTPolicy<G>, C: MCTSCache<G, P>> MCTSAlgo<G> for TurnBased
         {
             current_index
         } else {
-            let current_state = self.nodes[current_index].get_state().clone();
-            for mv in G::available_moves(&current_state) {
-                let new_state = G::apply_move(&current_state, &mv);
+            let visits = self.nodes[current_index].get_visits();
+            let num_parent_children = self.nodes[current_index].get_children().len();
+            while let Some(mv) = self.nodes[current_index]
+                .expansion_policy
+                .pop_expandable_move(visits, num_parent_children)
+            {
+                let new_state = G::apply_move(self.nodes[current_index].get_state(), &mv);
                 let new_node = TurnBasedNode::new(new_state, mv);
                 self.nodes.push(new_node);
                 let child_index = self.nodes.len() - 1;

@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::{UltTTT, UltTTTMCTSGame, UltTTTPlayerAction, U, V};
 
+type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
+
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
         $x.trim().parse::<$t>().unwrap()
@@ -28,7 +30,7 @@ fn main() {
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
-    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, DynamicC, WithCache> =
+    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, DynamicC, WithCache, PWDefaultTTT> =
         TurnBasedMCTS::new(weighting_factor);
 
     // start parallel thread for input of codingame
