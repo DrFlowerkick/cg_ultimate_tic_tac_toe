@@ -30,8 +30,8 @@ fn main() {
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
-    let mut mcts_ult_ttt: TurnBasedMCTS<UltTTTMCTSGame, DynamicC, WithCache, PWDefaultTTT> =
-        TurnBasedMCTS::new(weighting_factor);
+    let mut mcts_ult_ttt: PlainMCTS<UltTTTMCTSGame, DynamicC, WithCache, PWDefaultTTT> =
+        PlainMCTS::new(weighting_factor);
 
     // start parallel thread for input of codingame
     let (tx, rx) = mpsc::channel();

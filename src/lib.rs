@@ -339,7 +339,7 @@ impl MCTSGame for UltTTTMCTSGame {
 #[cfg(test)]
 mod tests {
     use my_lib::my_monte_carlo_tree_search::{
-        DynamicC, ExpandAll, MCTSAlgo, NoCache, PWDefault, StaticC, TurnBasedMCTS, WithCache,
+        DynamicC, ExpandAll, MCTSAlgo, NoCache, PWDefault, PlainMCTS, StaticC, WithCache,
     };
     type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
     type ExpandAllTTT = ExpandAll<UltTTTMCTSGame>;
@@ -357,21 +357,17 @@ mod tests {
         let number_of_matches = 10;
         for i in 0..number_of_matches {
             eprintln!("________match {}________", i + 1);
-            let mut first_mcts_ult_ttt: TurnBasedMCTS<
+            let mut first_mcts_ult_ttt: PlainMCTS<
                 UltTTTMCTSGame,
                 DynamicC,
                 WithCache,
                 PWDefaultTTT,
-            > = TurnBasedMCTS::new(WEIGHTING_FACTOR);
+            > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut first_ult_ttt_game_data = UltTTT::new();
             first_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Me);
             let mut first_time_out = TIME_OUT_FIRST_TURN;
-            let mut second_mcts_ult_ttt: TurnBasedMCTS<
-                UltTTTMCTSGame,
-                StaticC,
-                NoCache,
-                ExpandAllTTT,
-            > = TurnBasedMCTS::new(WEIGHTING_FACTOR);
+            let mut second_mcts_ult_ttt: PlainMCTS<UltTTTMCTSGame, StaticC, NoCache, ExpandAllTTT> =
+                PlainMCTS::new(WEIGHTING_FACTOR);
             let mut second_ult_ttt_game_data = UltTTT::new();
             second_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Opp);
             let mut second_time_out = TIME_OUT_FIRST_TURN;
