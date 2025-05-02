@@ -336,11 +336,45 @@ impl MCTSGame for UltTTTMCTSGame {
     }
 }
 
+pub struct UltTTTHeuristic {}
+
+impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
+    fn evaluate_state(state: &<UltTTTMCTSGame as MCTSGame>::State) -> f32 {
+        match state.status {
+            TicTacToeStatus::Player(MonteCarloPlayer::Me) => 1.0,
+            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => 0.0,
+            TicTacToeStatus::Tie => 0.5,
+            TicTacToeStatus::Vacant => {
+                // meta progress: wins on status_map
+                let my_wins = state.status_map.count_player_cells(MonteCarloPlayer::Me) as f32;
+                let opp_wins = state.status_map.count_player_cells(MonteCarloPlayer::Opp) as f32;
+                // mini board threats
+                let mut my_threats = 0.0;
+                let mut opp_threats = 0.0;
+                for (ult_ttt_big, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant()) {
+                    let (my, opp) = state.map.get(ult_ttt_big).get_threats();
+                    my_threats += my as f32;
+                    opp_threats += opp as f32;
+                }
+                // calculate heuristic value
+                let progress = state.status_map.count_non_vacant_cells() as f32 / 9.0;
+                let meta_weight = 0.3 + 0.4 * progress;
+                let threat_weight = 1.0 - meta_weight;
+
+                let final_score = 0.5
+                    + meta_weight * (my_wins - opp_wins) / 9.0
+                    + threat_weight * (my_threats - opp_threats) / 20.0;
+
+                final_score.clamp(0.0, 1.0)
+            }
+        }
+    }
+}
+
+pub type UltTTTSimulationPolicy = HeuristicCutoff<20>;
+
 #[cfg(test)]
 mod tests {
-    use my_lib::my_monte_carlo_tree_search::{
-        DynamicC, ExpandAll, MCTSAlgo, NoCache, PWDefault, PlainMCTS, StaticC, WithCache,
-    };
     type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
     type ExpandAllTTT = ExpandAll<UltTTTMCTSGame>;
     use std::time::{Duration, Instant};
@@ -362,12 +396,20 @@ mod tests {
                 DynamicC,
                 WithCache,
                 PWDefaultTTT,
+                UltTTTHeuristic,
+                UltTTTSimulationPolicy,
             > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut first_ult_ttt_game_data = UltTTT::new();
             first_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Me);
             let mut first_time_out = TIME_OUT_FIRST_TURN;
-            let mut second_mcts_ult_ttt: PlainMCTS<UltTTTMCTSGame, StaticC, NoCache, ExpandAllTTT> =
-                PlainMCTS::new(WEIGHTING_FACTOR);
+            let mut second_mcts_ult_ttt: PlainMCTS<
+                UltTTTMCTSGame,
+                StaticC,
+                NoCache,
+                ExpandAllTTT,
+                DefaultHeuristic,
+                DefaultSimulationPolicy,
+            > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut second_ult_ttt_game_data = UltTTT::new();
             second_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Opp);
             let mut second_time_out = TIME_OUT_FIRST_TURN;

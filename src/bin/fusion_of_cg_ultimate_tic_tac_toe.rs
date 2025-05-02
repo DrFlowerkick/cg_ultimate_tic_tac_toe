@@ -16,8 +16,14 @@ fn main() {
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
-    let mut mcts_ult_ttt: PlainMCTS<UltTTTMCTSGame, DynamicC, WithCache, PWDefaultTTT> =
-        PlainMCTS::new(weighting_factor);
+    let mut mcts_ult_ttt: PlainMCTS<
+        UltTTTMCTSGame,
+        DynamicC,
+        WithCache,
+        PWDefaultTTT,
+        UltTTTHeuristic,
+        UltTTTSimulationPolicy,
+    > = PlainMCTS::new(weighting_factor);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || loop {
         let mut input_line = String::new();
@@ -345,6 +351,35 @@ impl MCTSGame for UltTTTMCTSGame {
         MonteCarloPlayer::Me
     }
 }
+struct UltTTTHeuristic {}
+impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
+    fn evaluate_state(state: &<UltTTTMCTSGame as MCTSGame>::State) -> f32 {
+        match state.status {
+            TicTacToeStatus::Player(MonteCarloPlayer::Me) => 1.0,
+            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => 0.0,
+            TicTacToeStatus::Tie => 0.5,
+            TicTacToeStatus::Vacant => {
+                let my_wins = state.status_map.count_player_cells(MonteCarloPlayer::Me) as f32;
+                let opp_wins = state.status_map.count_player_cells(MonteCarloPlayer::Opp) as f32;
+                let mut my_threats = 0.0;
+                let mut opp_threats = 0.0;
+                for (ult_ttt_big, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant()) {
+                    let (my, opp) = state.map.get(ult_ttt_big).get_threats();
+                    my_threats += my as f32;
+                    opp_threats += opp as f32;
+                }
+                let progress = state.status_map.count_non_vacant_cells() as f32 / 9.0;
+                let meta_weight = 0.3 + 0.4 * progress;
+                let threat_weight = 1.0 - meta_weight;
+                let final_score = 0.5
+                    + meta_weight * (my_wins - opp_wins) / 9.0
+                    + threat_weight * (my_threats - opp_threats) / 20.0;
+                final_score.clamp(0.0, 1.0)
+            }
+        }
+    }
+}
+type UltTTTSimulationPolicy = HeuristicCutoff<20>;
 use std::cmp::Ordering;
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Default, Hash)]
 struct MapPoint<const X: usize, const Y: usize> {
@@ -481,38 +516,46 @@ impl<T: Copy + Clone + Default, const X: usize, const Y: usize> Default for MyMa
     }
 }
 use rand::prelude::IteratorRandom;
-struct PlainMCTS<G, P, C, E>
+struct PlainMCTS<G, P, C, E, H, S>
 where
     G: MCTSGame,
     P: UCTPolicy<G>,
     C: MCTSCache<G, P>,
     E: ExpansionPolicy<G>,
+    H: Heuristic<G>,
+    S: SimulationPolicy<G, H>,
 {
-    nodes: Vec<PlainNode<G, P, C, E>>,
+    nodes: Vec<PlainNode<G, P, C, E, H>>,
     root_index: usize,
     exploration_constant: f32,
+    phantom: std::marker::PhantomData<S>,
 }
-impl<G, P, C, E> PlainMCTS<G, P, C, E>
+impl<G, P, C, E, H, S> PlainMCTS<G, P, C, E, H, S>
 where
     G: MCTSGame,
     P: UCTPolicy<G>,
     C: MCTSCache<G, P>,
     E: ExpansionPolicy<G>,
+    H: Heuristic<G>,
+    S: SimulationPolicy<G, H>,
 {
     fn new(exploration_constant: f32) -> Self {
         Self {
             nodes: vec![],
             root_index: 0,
             exploration_constant,
+            phantom: std::marker::PhantomData,
         }
     }
 }
-impl<G, P, C, E> MCTSAlgo<G> for PlainMCTS<G, P, C, E>
+impl<G, P, C, E, H, S> MCTSAlgo<G> for PlainMCTS<G, P, C, E, H, S>
 where
     G: MCTSGame,
     P: UCTPolicy<G>,
     C: MCTSCache<G, P>,
     E: ExpansionPolicy<G>,
+    H: Heuristic<G>,
+    S: SimulationPolicy<G, H>,
 {
     fn iterate(&mut self) {
         let mut path = vec![self.root_index];
@@ -568,13 +611,22 @@ where
             child_index
         };
         let mut current_state = self.nodes[current_index].get_state().clone();
-        while !G::is_terminal(&current_state) {
-            let random_move = G::available_moves(&current_state)
-                .choose(&mut rand::thread_rng())
-                .expect("No available moves");
-            current_state = G::apply_move(&current_state, &random_move);
-        }
-        let simulation_result = G::evaluate(&current_state);
+        let mut depth = 0;
+        let simulation_result = loop {
+            if G::is_terminal(&current_state) {
+                break G::evaluate(&current_state);
+            }
+            if let Some(heuristic) = S::should_cutoff(&current_state, depth) {
+                break heuristic;
+            }
+            current_state = G::apply_move(
+                &current_state,
+                &G::available_moves(&current_state)
+                    .choose(&mut rand::thread_rng())
+                    .expect("No available moves"),
+            );
+            depth += 1;
+        };
         for &node_index in path.iter().rev() {
             self.nodes[node_index].increment_visits();
             self.nodes[node_index].add_simulation_result(simulation_result);
@@ -676,6 +728,25 @@ impl<G: MCTSGame, P: UCTPolicy<G>> MCTSCache<G, P> for WithCache {
         self.exploration
     }
 }
+struct ExpandAll<G: MCTSGame> {
+    moves: Vec<G::Move>,
+}
+impl<G: MCTSGame> ExpansionPolicy<G> for ExpandAll<G> {
+    fn new(state: &<G as MCTSGame>::State) -> Self {
+        let moves = if G::is_terminal(state) {
+            vec![]
+        } else {
+            G::available_moves(state).collect::<Vec<_>>()
+        };
+        ExpandAll { moves }
+    }
+    fn should_expand(&self, _v: usize, _n: usize) -> bool {
+        !self.moves.is_empty()
+    }
+    fn pop_expandable_move(&mut self, _v: usize, _n: usize) -> Option<<G as MCTSGame>::Move> {
+        self.moves.pop()
+    }
+}
 struct ProgressiveWidening<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> {
     unexpanded_moves: Vec<G::Move>,
 }
@@ -718,12 +789,26 @@ impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> ExpansionPol
         self.unexpanded_moves.pop()
     }
 }
-struct PlainNode<G, P, C, E>
+struct HeuristicCutoff<const MXD: usize> {}
+impl<const MXD: usize, G: MCTSGame, H: Heuristic<G>> SimulationPolicy<G, H>
+    for HeuristicCutoff<MXD>
+{
+    fn should_cutoff(state: &G::State, depth: usize) -> Option<f32> {
+        let heuristic = H::evaluate_state(state);
+        if depth >= MXD || heuristic <= 0.05 || heuristic >= 0.95 {
+            Some(heuristic)
+        } else {
+            None
+        }
+    }
+}
+struct PlainNode<G, P, C, E, H>
 where
     G: MCTSGame,
     P: UCTPolicy<G>,
     C: MCTSCache<G, P>,
     E: ExpansionPolicy<G>,
+    H: Heuristic<G>,
 {
     state: G::State,
     visits: usize,
@@ -732,14 +817,15 @@ where
     children: Vec<usize>,
     cache: C,
     expansion_policy: E,
-    phantom: std::marker::PhantomData<P>,
+    phantom: std::marker::PhantomData<(P, H)>,
 }
-impl<G, P, C, E> PlainNode<G, P, C, E>
+impl<G, P, C, E, H> PlainNode<G, P, C, E, H>
 where
     G: MCTSGame,
     P: UCTPolicy<G>,
     C: MCTSCache<G, P>,
     E: ExpansionPolicy<G>,
+    H: Heuristic<G>,
 {
     fn root_node(state: G::State) -> Self {
         PlainNode {
@@ -772,12 +858,13 @@ where
         &self.children
     }
 }
-impl<G, P, C, E> MCTSNode<G> for PlainNode<G, P, C, E>
+impl<G, P, C, E, H> MCTSNode<G> for PlainNode<G, P, C, E, H>
 where
     G: MCTSGame,
     P: UCTPolicy<G>,
     C: MCTSCache<G, P>,
     E: ExpansionPolicy<G>,
+    H: Heuristic<G>,
 {
     fn get_state(&self) -> &G::State {
         &self.state
@@ -892,6 +979,19 @@ trait ExpansionPolicy<G: MCTSGame> {
     fn pop_expandable_move(&mut self, visits: usize, num_parent_children: usize)
         -> Option<G::Move>;
 }
+trait SimulationPolicy<G: MCTSGame, H: Heuristic<G>> {
+    fn should_cutoff(_state: &G::State, _depth: usize) -> Option<f32> {
+        None
+    }
+}
+trait Heuristic<G: MCTSGame> {
+    fn evaluate_state(state: &G::State) -> f32 {
+        G::evaluate(state)
+    }
+    fn evaluate_move(_state: &G::State, _mv: &G::Move) -> f32 {
+        0.0
+    }
+}
 const X: usize = 3;
 const Y: usize = X;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -988,6 +1088,62 @@ impl TicTacToeGameData {
         }
         self.status
     }
+    fn check_threat_for_one_line<'a>(
+        &self,
+        my_threats: &mut u8,
+        opp_threats: &mut u8,
+        line: impl Iterator<Item = &'a TicTacToeStatus>,
+    ) {
+        let mut me: u8 = 0;
+        let mut opp: u8 = 0_u8;
+        let mut vacant: u8 = 0;
+        for element in line {
+            match element {
+                TicTacToeStatus::Vacant => vacant += 1,
+                TicTacToeStatus::Player(MonteCarloPlayer::Me) => me += 1,
+                TicTacToeStatus::Player(MonteCarloPlayer::Opp) => opp += 1,
+                TicTacToeStatus::Tie => return,
+            }
+            if (me > 0 && opp > 0) || vacant > 1 {
+                return;
+            }
+        }
+        match (me, opp, vacant) {
+            (2, 0, 1) => *my_threats += 1,
+            (0, 2, 1) => *opp_threats += 1,
+            _ => (),
+        }
+    }
+    fn get_threats(&self) -> (u8, u8) {
+        if self.status.is_not_vacant() || (self.num_me_cells < 2 && self.num_opp_cells < 2) {
+            return (0, 0);
+        }
+        let mut me_threat = 0;
+        let mut opp_threat = 0;
+        for rc in 0..3 {
+            self.check_threat_for_one_line(
+                &mut me_threat,
+                &mut opp_threat,
+                self.map.iter_row(rc).map(|(_, v)| v),
+            );
+            self.check_threat_for_one_line(
+                &mut me_threat,
+                &mut opp_threat,
+                self.map.iter_column(rc).map(|(_, v)| v),
+            );
+        }
+        self.check_threat_for_one_line(
+            &mut me_threat,
+            &mut opp_threat,
+            self.iter_diagonal_top_left(),
+        );
+        self.check_threat_for_one_line(
+            &mut me_threat,
+            &mut opp_threat,
+            self.iter_diagonal_top_right(),
+        );
+        (me_threat, opp_threat)
+    }
     fn iter_diagonal_top_left(&self) -> impl Iterator<Item = &'_ TicTacToeStatus> {
         [(0_usize, 0_usize), (1, 1), (2, 2)]
             .iter()
@@ -1046,5 +1202,11 @@ impl TicTacToeGameData {
                 _ => false,
             })
             .count()
+    }
+    fn count_non_vacant_cells(&self) -> usize {
+        self.map.iter().filter(|(_, v)| v.is_not_vacant()).count()
+    }
+    fn iter_map(&self) -> impl Iterator<Item = (MapPoint<X, Y>, &TicTacToeStatus)> {
+        self.map.iter()
     }
 }

@@ -5,7 +5,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cg_ultimate_tic_tac_toe::{UltTTT, UltTTTMCTSGame, UltTTTPlayerAction, U, V};
+use cg_ultimate_tic_tac_toe::{
+    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTPlayerAction, UltTTTSimulationPolicy, U, V,
+};
 
 type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
 
@@ -30,8 +32,14 @@ fn main() {
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
-    let mut mcts_ult_ttt: PlainMCTS<UltTTTMCTSGame, DynamicC, WithCache, PWDefaultTTT> =
-        PlainMCTS::new(weighting_factor);
+    let mut mcts_ult_ttt: PlainMCTS<
+        UltTTTMCTSGame,
+        DynamicC,
+        WithCache,
+        PWDefaultTTT,
+        UltTTTHeuristic,
+        UltTTTSimulationPolicy,
+    > = PlainMCTS::new(weighting_factor);
 
     // start parallel thread for input of codingame
     let (tx, rx) = mpsc::channel();
