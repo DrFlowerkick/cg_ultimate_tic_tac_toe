@@ -47,10 +47,13 @@ fn main() {
     });
     let (opponent_row, opponent_col) = rx.recv().expect("Failed to receive initial input");
     if opponent_row >= 0 {
-        game_data.set_current_player(MonteCarloPlayer::Opp);
+        game_data.set_current_player(TwoPlayer::Opp);
         let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-        game_data =
-            UltTTTMCTSGame::apply_move(&game_data, &UltTTTPlayerAction::from_ext(opp_action));
+        game_data = UltTTTMCTSGame::apply_move(
+            &game_data,
+            &UltTTTPlayerAction::from_ext(opp_action),
+            &mut mcts_ult_ttt.game_cache,
+        );
     }
     let mut time_out = time_out_first_turn;
     loop {
@@ -63,8 +66,9 @@ fn main() {
         }
         eprintln!("Iterations: {}", number_of_iterations);
         time_out = time_out_successive_turns;
-        let selected_move = mcts_ult_ttt.select_move();
-        game_data = UltTTTMCTSGame::apply_move(&game_data, selected_move);
+        let selected_move = *mcts_ult_ttt.select_move();
+        game_data =
+            UltTTTMCTSGame::apply_move(&game_data, &selected_move, &mut mcts_ult_ttt.game_cache);
         selected_move.execute_action();
         mcts_ult_ttt.set_root(&game_data);
         let start = Instant::now();
@@ -77,6 +81,7 @@ fn main() {
                     game_data = UltTTTMCTSGame::apply_move(
                         &game_data,
                         &UltTTTPlayerAction::from_ext(opp_action),
+                        &mut mcts_ult_ttt.game_cache,
                     );
                     break;
                 }
@@ -106,14 +111,14 @@ struct IterUltTTT<'a> {
     iter_finished: bool,
 }
 impl<'a> IterUltTTT<'a> {
-    fn new(ult_ttt_data: &'a UltTTT, player: MonteCarloPlayer, parent_game_turn: usize) -> Self {
+    fn new(ult_ttt_data: &'a UltTTT, player: TwoPlayer, parent_game_turn: usize) -> Self {
         let mut result = IterUltTTT {
             ult_ttt_data,
             player_action: UltTTTPlayerAction::default(),
             next_action_square_is_specified: false,
             iter_finished: false,
         };
-        if parent_game_turn == 0 && player == MonteCarloPlayer::Me {
+        if parent_game_turn == 0 && player == TwoPlayer::Me {
             result.player_action.ult_ttt_big = MapPoint::<X, Y>::new(1, 1);
             result.player_action.ult_ttt_small = MapPoint::<X, Y>::new(0, 0);
             result.next_action_square_is_specified = true;
@@ -249,7 +254,7 @@ struct UltTTT {
     status_map: TicTacToeGameData,
     status: TicTacToeStatus,
     next_action_square_is_specified: Option<MapPoint<X, Y>>,
-    current_player: MonteCarloPlayer,
+    current_player: TwoPlayer,
     game_turn: usize,
 }
 impl UltTTT {
@@ -259,11 +264,11 @@ impl UltTTT {
             status_map: TicTacToeGameData::new(),
             status: TicTacToeStatus::Vacant,
             next_action_square_is_specified: None,
-            current_player: MonteCarloPlayer::Me,
+            current_player: TwoPlayer::Me,
             game_turn: 0,
         }
     }
-    fn set_current_player(&mut self, player: MonteCarloPlayer) {
+    fn set_current_player(&mut self, player: TwoPlayer) {
         self.current_player = player;
     }
     fn next_player(&mut self) {
@@ -275,7 +280,7 @@ impl UltTTT {
     fn execute_player_action(
         &mut self,
         player_action: UltTTTPlayerAction,
-        player: MonteCarloPlayer,
+        player: TwoPlayer,
     ) -> TicTacToeStatus {
         let cell_status = self
             .map
@@ -293,11 +298,11 @@ impl UltTTT {
             TicTacToeStatus::Tie => self.status_map.set_tie(player_action.ult_ttt_big),
         };
         if self.status == TicTacToeStatus::Tie {
-            let my_squares = self.status_map.count_player_cells(MonteCarloPlayer::Me);
-            let opp_squares = self.status_map.count_player_cells(MonteCarloPlayer::Opp);
+            let my_squares = self.status_map.count_player_cells(TwoPlayer::Me);
+            let opp_squares = self.status_map.count_player_cells(TwoPlayer::Opp);
             self.status = match my_squares.cmp(&opp_squares) {
-                Ordering::Greater => TicTacToeStatus::Player(MonteCarloPlayer::Me),
-                Ordering::Less => TicTacToeStatus::Player(MonteCarloPlayer::Opp),
+                Ordering::Greater => TicTacToeStatus::Player(TwoPlayer::Me),
+                Ordering::Less => TicTacToeStatus::Player(TwoPlayer::Opp),
                 Ordering::Equal => TicTacToeStatus::Tie,
             };
         } else {
@@ -318,7 +323,8 @@ struct UltTTTMCTSGame {}
 impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTPlayerAction;
-    type Player = MonteCarloPlayer;
+    type Player = TwoPlayer;
+    type Cache = NoGameCache;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
         Box::new(IterUltTTT::new(
             state,
@@ -326,41 +332,47 @@ impl MCTSGame for UltTTTMCTSGame {
             state.game_turn,
         ))
     }
-    fn apply_move(state: &Self::State, mv: &Self::Move) -> Self::State {
+    fn apply_move(
+        state: &Self::State,
+        mv: &Self::Move,
+        _game_cache: &mut Self::Cache,
+    ) -> Self::State {
         let mut new_state = *state;
         new_state.execute_player_action(*mv, state.current_player);
         new_state.next_player();
         new_state.increment_game_turn();
         new_state
     }
-    fn evaluate(state: &Self::State) -> f32 {
+    fn evaluate(state: &Self::State, _game_cache: &mut Self::Cache) -> Option<f32> {
         match state.status {
-            TicTacToeStatus::Player(MonteCarloPlayer::Me) => 1.0,
-            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => 0.0,
-            TicTacToeStatus::Tie => 0.5,
-            TicTacToeStatus::Vacant => f32::NAN,
+            TicTacToeStatus::Player(TwoPlayer::Me) => Some(1.0),
+            TicTacToeStatus::Player(TwoPlayer::Opp) => Some(0.0),
+            TicTacToeStatus::Tie => Some(0.5),
+            TicTacToeStatus::Vacant => None,
         }
     }
-    fn is_terminal(state: &Self::State) -> bool {
-        state.status.is_not_vacant()
-    }
-    fn current_player(state: &Self::State) -> MonteCarloPlayer {
+    fn current_player(state: &Self::State) -> TwoPlayer {
         state.current_player
     }
     fn perspective_player() -> Self::Player {
-        MonteCarloPlayer::Me
+        TwoPlayer::Me
     }
 }
 struct UltTTTHeuristic {}
 impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
-    fn evaluate_state(state: &<UltTTTMCTSGame as MCTSGame>::State) -> f32 {
+    type Cache = NoHeuristicCache;
+    fn evaluate_state(
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        _game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        _heuristic_cache: &mut Self::Cache,
+    ) -> f32 {
         match state.status {
-            TicTacToeStatus::Player(MonteCarloPlayer::Me) => 1.0,
-            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => 0.0,
+            TicTacToeStatus::Player(TwoPlayer::Me) => 1.0,
+            TicTacToeStatus::Player(TwoPlayer::Opp) => 0.0,
             TicTacToeStatus::Tie => 0.5,
             TicTacToeStatus::Vacant => {
-                let my_wins = state.status_map.count_player_cells(MonteCarloPlayer::Me) as f32;
-                let opp_wins = state.status_map.count_player_cells(MonteCarloPlayer::Opp) as f32;
+                let my_wins = state.status_map.count_player_cells(TwoPlayer::Me) as f32;
+                let opp_wins = state.status_map.count_player_cells(TwoPlayer::Opp) as f32;
                 let mut my_threats = 0.0;
                 let mut opp_threats = 0.0;
                 for (ult_ttt_big, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant()) {
@@ -377,6 +389,14 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
                 final_score.clamp(0.0, 1.0)
             }
         }
+    }
+    fn evaluate_move(
+        _state: &<UltTTTMCTSGame as MCTSGame>::State,
+        _mv: &<UltTTTMCTSGame as MCTSGame>::Move,
+        _game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        _heuristic_cache: &mut Self::Cache,
+    ) -> f32 {
+        0.0
     }
 }
 type UltTTTSimulationPolicy = HeuristicCutoff<20>;
@@ -528,6 +548,8 @@ where
     nodes: Vec<PlainNode<G, UP, UC, EP, H>>,
     root_index: usize,
     exploration_constant: f32,
+    game_cache: G::Cache,
+    heuristic_cache: H::Cache,
     phantom: std::marker::PhantomData<SP>,
 }
 impl<G, UP, UC, EP, H, SP> PlainMCTS<G, UP, UC, EP, H, SP>
@@ -544,6 +566,8 @@ where
             nodes: vec![],
             root_index: 0,
             exploration_constant,
+            game_cache: G::Cache::new(),
+            heuristic_cache: H::Cache::new(),
             phantom: std::marker::PhantomData,
         }
     }
@@ -586,37 +610,48 @@ where
             path.push(best_child_index);
             current_index = best_child_index;
         }
-        let current_index = if G::is_terminal(self.nodes[current_index].get_state())
-            || self.nodes[current_index].get_visits() == 0
-        {
-            current_index
-        } else {
-            let visits = self.nodes[current_index].get_visits();
-            let num_parent_children = self.nodes[current_index].get_children().len();
-            while let Some(mv) = self.nodes[current_index]
-                .expansion_policy
-                .pop_expandable_move(visits, num_parent_children)
+        let current_index =
+            if G::evaluate(self.nodes[current_index].get_state(), &mut self.game_cache).is_some()
+                || self.nodes[current_index].get_visits() == 0
             {
-                let new_state = G::apply_move(self.nodes[current_index].get_state(), &mv);
-                let new_node = PlainNode::new(new_state, mv);
-                self.nodes.push(new_node);
-                let child_index = self.nodes.len() - 1;
-                self.nodes[current_index].add_child(child_index);
-            }
-            let child_index = *self.nodes[current_index]
-                .get_children()
-                .first()
-                .expect("No children found");
-            path.push(child_index);
-            child_index
-        };
+                current_index
+            } else {
+                let visits = self.nodes[current_index].get_visits();
+                let num_parent_children = self.nodes[current_index].get_children().len();
+                while let Some(mv) = self.nodes[current_index]
+                    .expansion_policy
+                    .pop_expandable_move(visits, num_parent_children)
+                {
+                    let new_state = G::apply_move(
+                        self.nodes[current_index].get_state(),
+                        &mv,
+                        &mut self.game_cache,
+                    );
+                    let is_terminal = G::evaluate(&new_state, &mut self.game_cache).is_some();
+                    let new_node = PlainNode::new(new_state, mv, is_terminal);
+                    self.nodes.push(new_node);
+                    let child_index = self.nodes.len() - 1;
+                    self.nodes[current_index].add_child(child_index);
+                }
+                let child_index = *self.nodes[current_index]
+                    .get_children()
+                    .first()
+                    .expect("No children found");
+                path.push(child_index);
+                child_index
+            };
         let mut current_state = self.nodes[current_index].get_state().clone();
         let mut depth = 0;
         let simulation_result = loop {
-            if G::is_terminal(&current_state) {
-                break G::evaluate(&current_state);
+            if let Some(final_score) = G::evaluate(&current_state, &mut self.game_cache) {
+                break final_score;
             }
-            if let Some(heuristic) = SP::should_cutoff(&current_state, depth) {
+            if let Some(heuristic) = SP::should_cutoff(
+                &current_state,
+                depth,
+                &mut self.game_cache,
+                &mut self.heuristic_cache,
+            ) {
                 break heuristic;
             }
             current_state = G::apply_move(
@@ -624,12 +659,12 @@ where
                 &G::available_moves(&current_state)
                     .choose(&mut rand::thread_rng())
                     .expect("No available moves"),
+                &mut self.game_cache,
             );
             depth += 1;
         };
         for &node_index in path.iter().rev() {
-            self.nodes[node_index].increment_visits();
-            self.nodes[node_index].add_simulation_result(simulation_result);
+            self.nodes[node_index].update_stats(simulation_result);
         }
     }
     fn set_root(&mut self, state: &G::State) -> bool {
@@ -662,25 +697,31 @@ where
 }
 use rand::prelude::SliceRandom;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
-enum MonteCarloPlayer {
+enum TwoPlayer {
     #[default]
     Me,
     Opp,
 }
-impl MonteCarloPlayer {
+impl TwoPlayer {
     fn next_player(&self) -> Self {
         match self {
-            MonteCarloPlayer::Me => MonteCarloPlayer::Opp,
-            MonteCarloPlayer::Opp => MonteCarloPlayer::Me,
+            TwoPlayer::Me => TwoPlayer::Opp,
+            TwoPlayer::Opp => TwoPlayer::Me,
         }
     }
 }
-impl MCTSPlayer for MonteCarloPlayer {
+impl MCTSPlayer for TwoPlayer {
     fn next(&self) -> Self {
         match self {
-            MonteCarloPlayer::Me => MonteCarloPlayer::Opp,
-            MonteCarloPlayer::Opp => MonteCarloPlayer::Me,
+            TwoPlayer::Me => TwoPlayer::Opp,
+            TwoPlayer::Opp => TwoPlayer::Me,
         }
+    }
+}
+struct NoGameCache;
+impl<G: MCTSGame> GameCache<G> for NoGameCache {
+    fn new() -> Self {
+        NoGameCache
     }
 }
 struct DynamicC {}
@@ -726,25 +767,6 @@ impl<G: MCTSGame, UP: UCTPolicy<G>> UTCCache<G, UP> for CachedUTC {
         self.exploration
     }
 }
-struct ExpandAll<G: MCTSGame> {
-    moves: Vec<G::Move>,
-}
-impl<G: MCTSGame> ExpansionPolicy<G> for ExpandAll<G> {
-    fn new(state: &<G as MCTSGame>::State) -> Self {
-        let moves = if G::is_terminal(state) {
-            vec![]
-        } else {
-            G::available_moves(state).collect::<Vec<_>>()
-        };
-        ExpandAll { moves }
-    }
-    fn should_expand(&self, _v: usize, _n: usize) -> bool {
-        !self.moves.is_empty()
-    }
-    fn pop_expandable_move(&mut self, _v: usize, _n: usize) -> Option<<G as MCTSGame>::Move> {
-        self.moves.pop()
-    }
-}
 struct ProgressiveWidening<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> {
     unexpanded_moves: Vec<G::Move>,
 }
@@ -763,8 +785,8 @@ impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame>
 impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> ExpansionPolicy<G>
     for ProgressiveWidening<C, AN, AD, G>
 {
-    fn new(state: &<G as MCTSGame>::State) -> Self {
-        let unexpanded_moves = if G::is_terminal(state) {
+    fn new(state: &<G as MCTSGame>::State, is_terminal: bool) -> Self {
+        let unexpanded_moves = if is_terminal {
             vec![]
         } else {
             let mut unexpanded_moves = G::available_moves(state).collect::<Vec<_>>();
@@ -791,13 +813,43 @@ struct HeuristicCutoff<const MXD: usize> {}
 impl<const MXD: usize, G: MCTSGame, H: Heuristic<G>> SimulationPolicy<G, H>
     for HeuristicCutoff<MXD>
 {
-    fn should_cutoff(state: &G::State, depth: usize) -> Option<f32> {
-        let heuristic = H::evaluate_state(state);
+    fn should_cutoff(
+        state: &G::State,
+        depth: usize,
+        game_cache: &mut G::Cache,
+        heuristic_cache: &mut H::Cache,
+    ) -> Option<f32> {
+        let heuristic = H::evaluate_state(state, game_cache, heuristic_cache);
         if depth >= MXD || heuristic <= 0.05 || heuristic >= 0.95 {
             Some(heuristic)
         } else {
             None
         }
+    }
+}
+struct NoHeuristicCache {}
+impl<G: MCTSGame> HeuristicCache<G> for NoHeuristicCache {
+    fn new() -> Self {
+        NoHeuristicCache {}
+    }
+}
+struct NoHeuristic {}
+impl<G: MCTSGame> Heuristic<G> for NoHeuristic {
+    type Cache = NoHeuristicCache;
+    fn evaluate_state(
+        state: &<G as MCTSGame>::State,
+        game_cache: &mut <G as MCTSGame>::Cache,
+        _heuristic_cache: &mut Self::Cache,
+    ) -> f32 {
+        G::evaluate(state, game_cache).unwrap_or(0.5)
+    }
+    fn evaluate_move(
+        _state: &<G as MCTSGame>::State,
+        _mv: &<G as MCTSGame>::Move,
+        _game_cache: &mut <G as MCTSGame>::Cache,
+        _heuristic_cache: &mut Self::Cache,
+    ) -> f32 {
+        0.0
     }
 }
 struct PlainNode<G, UP, UC, EP, H>
@@ -827,7 +879,7 @@ where
 {
     fn root_node(state: G::State) -> Self {
         PlainNode {
-            expansion_policy: EP::new(&state),
+            expansion_policy: EP::new(&state, false),
             state,
             visits: 0,
             accumulated_value: 0.0,
@@ -837,9 +889,9 @@ where
             phantom: std::marker::PhantomData,
         }
     }
-    fn new(state: G::State, mv: G::Move) -> Self {
+    fn new(state: G::State, mv: G::Move, is_terminal: bool) -> Self {
         PlainNode {
-            expansion_policy: EP::new(&state),
+            expansion_policy: EP::new(&state, is_terminal),
             state,
             visits: 0,
             accumulated_value: 0.0,
@@ -876,7 +928,8 @@ where
     fn get_accumulated_value(&self) -> f32 {
         self.accumulated_value
     }
-    fn add_simulation_result(&mut self, result: f32) {
+    fn update_stats(&mut self, result: f32) {
+        self.visits += 1;
         self.accumulated_value += result;
         self.utc_cache.update_exploitation(
             self.visits,
@@ -884,9 +937,6 @@ where
             G::current_player(&self.state),
             G::perspective_player(),
         );
-    }
-    fn increment_visits(&mut self) {
-        self.visits += 1;
     }
     fn calc_utc(&mut self, parent_visits: usize, c: f32, perspective_player: G::Player) -> f32 {
         if self.visits == 0 {
@@ -909,14 +959,29 @@ where
 trait MCTSPlayer: PartialEq {
     fn next(&self) -> Self;
 }
-trait MCTSGame {
+trait GameCache<G: MCTSGame> {
+    fn new() -> Self;
+    fn get_applied_state(&self, _state: &G::State, _mv: &G::Move) -> Option<G::State> {
+        None
+    }
+    fn insert_applied_state(&mut self, _state: &G::State, _mv: &G::Move, _result: G::State) {}
+    fn get_terminal_value(&self, _state: &G::State) -> Option<f32> {
+        None
+    }
+    fn insert_terminal_value(&mut self, _tate: &G::State, _value: f32) {}
+}
+trait MCTSGame: Sized {
     type State: Clone + PartialEq;
     type Move;
     type Player: MCTSPlayer;
+    type Cache: GameCache<Self>;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a>;
-    fn apply_move(state: &Self::State, mv: &Self::Move) -> Self::State;
-    fn is_terminal(state: &Self::State) -> bool;
-    fn evaluate(state: &Self::State) -> f32;
+    fn apply_move(
+        state: &Self::State,
+        mv: &Self::Move,
+        game_cache: &mut Self::Cache,
+    ) -> Self::State;
+    fn evaluate(state: &Self::State, game_cache: &mut Self::Cache) -> Option<f32>;
     fn current_player(state: &Self::State) -> Self::Player;
     fn perspective_player() -> Self::Player;
 }
@@ -927,8 +992,7 @@ trait MCTSNode<G: MCTSGame> {
     }
     fn get_visits(&self) -> usize;
     fn get_accumulated_value(&self) -> f32;
-    fn add_simulation_result(&mut self, result: f32);
-    fn increment_visits(&mut self);
+    fn update_stats(&mut self, result: f32);
     fn calc_utc(&mut self, parent_visits: usize, base_c: f32, perspective_player: G::Player)
         -> f32;
 }
@@ -975,22 +1039,44 @@ trait UTCCache<G: MCTSGame, UP: UCTPolicy<G>> {
     fn get_exploration(&self, visits: usize, parent_visits: usize, base_c: f32) -> f32;
 }
 trait ExpansionPolicy<G: MCTSGame> {
-    fn new(state: &G::State) -> Self;
+    fn new(state: &G::State, is_terminal: bool) -> Self;
     fn should_expand(&self, visits: usize, num_parent_children: usize) -> bool;
     fn pop_expandable_move(&mut self, visits: usize, num_parent_children: usize)
         -> Option<G::Move>;
 }
-trait SimulationPolicy<G: MCTSGame, H: Heuristic<G>> {
-    fn should_cutoff(_state: &G::State, _depth: usize) -> Option<f32> {
+trait HeuristicCache<G: MCTSGame> {
+    fn new() -> Self;
+    fn get_intermediate_score(&self, _state: &G::State) -> Option<f32> {
         None
     }
+    fn insert_intermediate_score(&mut self, _state: &G::State, _value: f32) {}
+    fn get_move_score(&self, _state: &G::State, _mv: &G::Move) -> Option<f32> {
+        None
+    }
+    fn insert_move_score(&mut self, _state: &G::State, _mv: &G::Move, _value: f32) {}
 }
 trait Heuristic<G: MCTSGame> {
-    fn evaluate_state(state: &G::State) -> f32 {
-        G::evaluate(state)
-    }
-    fn evaluate_move(_state: &G::State, _mv: &G::Move) -> f32 {
-        0.0
+    type Cache: HeuristicCache<G>;
+    fn evaluate_state(
+        state: &G::State,
+        game_cache: &mut G::Cache,
+        heuristic_cache: &mut Self::Cache,
+    ) -> f32;
+    fn evaluate_move(
+        state: &G::State,
+        mv: &G::Move,
+        game_cache: &mut G::Cache,
+        heuristic_cache: &mut Self::Cache,
+    ) -> f32;
+}
+trait SimulationPolicy<G: MCTSGame, H: Heuristic<G>> {
+    fn should_cutoff(
+        _state: &G::State,
+        _depth: usize,
+        _game_cache: &mut G::Cache,
+        _heuristic_cache: &mut H::Cache,
+    ) -> Option<f32> {
+        None
     }
 }
 const X: usize = 3;
@@ -999,7 +1085,7 @@ const Y: usize = X;
 enum TicTacToeStatus {
     #[default]
     Vacant,
-    Player(MonteCarloPlayer),
+    Player(TwoPlayer),
     Tie,
 }
 impl TicTacToeStatus {
@@ -1017,7 +1103,7 @@ struct TicTacToeGameData {
     num_me_cells: u8,
     num_opp_cells: u8,
     num_tie_cells: u8,
-    current_player: MonteCarloPlayer,
+    current_player: TwoPlayer,
 }
 impl TicTacToeGameData {
     fn new() -> Self {
@@ -1027,7 +1113,7 @@ impl TicTacToeGameData {
             num_me_cells: 0,
             num_opp_cells: 0,
             num_tie_cells: 0,
-            current_player: MonteCarloPlayer::Me,
+            current_player: TwoPlayer::Me,
         }
     }
     fn check_status_for_one_line<'a>(
@@ -1050,8 +1136,8 @@ impl TicTacToeGameData {
     fn check_status(&mut self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
         let check_lines = match self.map.get(cell) {
             TicTacToeStatus::Vacant => false,
-            TicTacToeStatus::Player(MonteCarloPlayer::Me) => self.num_me_cells > 2,
-            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => self.num_opp_cells > 2,
+            TicTacToeStatus::Player(TwoPlayer::Me) => self.num_me_cells > 2,
+            TicTacToeStatus::Player(TwoPlayer::Opp) => self.num_opp_cells > 2,
             TicTacToeStatus::Tie => false,
         };
         if check_lines {
@@ -1101,8 +1187,8 @@ impl TicTacToeGameData {
         for element in line {
             match element {
                 TicTacToeStatus::Vacant => vacant += 1,
-                TicTacToeStatus::Player(MonteCarloPlayer::Me) => me += 1,
-                TicTacToeStatus::Player(MonteCarloPlayer::Opp) => opp += 1,
+                TicTacToeStatus::Player(TwoPlayer::Me) => me += 1,
+                TicTacToeStatus::Player(TwoPlayer::Opp) => opp += 1,
                 TicTacToeStatus::Tie => return,
             }
             if (me > 0 && opp > 0) || vacant > 1 {
@@ -1155,12 +1241,12 @@ impl TicTacToeGameData {
             .iter()
             .map(move |p| self.map.get((*p).into()))
     }
-    fn set_player(&mut self, cell: MapPoint<X, Y>, player: MonteCarloPlayer) -> TicTacToeStatus {
+    fn set_player(&mut self, cell: MapPoint<X, Y>, player: TwoPlayer) -> TicTacToeStatus {
         match player {
-            MonteCarloPlayer::Me => {
+            TwoPlayer::Me => {
                 self.num_me_cells += 1;
             }
-            MonteCarloPlayer::Opp => {
+            TwoPlayer::Opp => {
                 self.num_opp_cells += 1;
             }
         }
@@ -1195,7 +1281,7 @@ impl TicTacToeGameData {
     fn get_first_vacant_cell(&self) -> Option<(MapPoint<X, Y>, &TicTacToeStatus)> {
         self.map.iter().find(|(_, v)| v.is_vacant())
     }
-    fn count_player_cells(&self, count_player: MonteCarloPlayer) -> usize {
+    fn count_player_cells(&self, count_player: TwoPlayer) -> usize {
         self.map
             .iter()
             .filter(|(_, v)| match v {

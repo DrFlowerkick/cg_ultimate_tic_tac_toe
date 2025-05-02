@@ -20,18 +20,14 @@ pub struct IterUltTTT<'a> {
 }
 
 impl<'a> IterUltTTT<'a> {
-    pub fn new(
-        ult_ttt_data: &'a UltTTT,
-        player: MonteCarloPlayer,
-        parent_game_turn: usize,
-    ) -> Self {
+    pub fn new(ult_ttt_data: &'a UltTTT, player: TwoPlayer, parent_game_turn: usize) -> Self {
         let mut result = IterUltTTT {
             ult_ttt_data,
             player_action: UltTTTPlayerAction::default(),
             next_action_square_is_specified: false,
             iter_finished: false,
         };
-        if parent_game_turn == 0 && player == MonteCarloPlayer::Me {
+        if parent_game_turn == 0 && player == TwoPlayer::Me {
             // if Me is start_player, only choose cells from big middle cell
             result.player_action.ult_ttt_big = MapPoint::<X, Y>::new(1, 1);
             result.player_action.ult_ttt_small = MapPoint::<X, Y>::new(0, 0);
@@ -178,7 +174,7 @@ pub struct UltTTT {
     pub status: TicTacToeStatus,
     next_action_square_is_specified: Option<MapPoint<X, Y>>,
     // required for new MCTS traits
-    pub current_player: MonteCarloPlayer,
+    pub current_player: TwoPlayer,
     // since new MCTS traits do not require game_turn, we need to store it here
     pub game_turn: usize,
 }
@@ -190,11 +186,11 @@ impl UltTTT {
             status_map: TicTacToeGameData::new(),
             status: TicTacToeStatus::Vacant,
             next_action_square_is_specified: None,
-            current_player: MonteCarloPlayer::Me,
+            current_player: TwoPlayer::Me,
             game_turn: 0,
         }
     }
-    pub fn set_current_player(&mut self, player: MonteCarloPlayer) {
+    pub fn set_current_player(&mut self, player: TwoPlayer) {
         self.current_player = player;
     }
     pub fn next_player(&mut self) {
@@ -211,7 +207,7 @@ impl UltTTT {
     pub fn execute_player_action(
         &mut self,
         player_action: UltTTTPlayerAction,
-        player: MonteCarloPlayer,
+        player: TwoPlayer,
     ) -> TicTacToeStatus {
         let cell_status = self
             .map
@@ -231,11 +227,11 @@ impl UltTTT {
         if self.status == TicTacToeStatus::Tie {
             // game finished without direct winner
             // count for each player number of won squares; most squares won wins game
-            let my_squares = self.status_map.count_player_cells(MonteCarloPlayer::Me);
-            let opp_squares = self.status_map.count_player_cells(MonteCarloPlayer::Opp);
+            let my_squares = self.status_map.count_player_cells(TwoPlayer::Me);
+            let opp_squares = self.status_map.count_player_cells(TwoPlayer::Opp);
             self.status = match my_squares.cmp(&opp_squares) {
-                Ordering::Greater => TicTacToeStatus::Player(MonteCarloPlayer::Me),
-                Ordering::Less => TicTacToeStatus::Player(MonteCarloPlayer::Opp),
+                Ordering::Greater => TicTacToeStatus::Player(TwoPlayer::Me),
+                Ordering::Less => TicTacToeStatus::Player(TwoPlayer::Opp),
                 Ordering::Equal => TicTacToeStatus::Tie,
             };
         } else {
@@ -287,15 +283,13 @@ impl Display for UltTTT {
     }
 }
 
-// solving UltTTT with new MCTS traits
-
-// solving TicTacToe with new MCTS traits
 pub struct UltTTTMCTSGame {}
 
 impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTPlayerAction;
-    type Player = MonteCarloPlayer;
+    type Player = TwoPlayer;
+    type Cache = NoGameCache;
 
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
         Box::new(IterUltTTT::new(
@@ -305,7 +299,11 @@ impl MCTSGame for UltTTTMCTSGame {
         ))
     }
 
-    fn apply_move(state: &Self::State, mv: &Self::Move) -> Self::State {
+    fn apply_move(
+        state: &Self::State,
+        mv: &Self::Move,
+        _game_cache: &mut Self::Cache,
+    ) -> Self::State {
         let mut new_state = *state;
         // apply the move for current player
         new_state.execute_player_action(*mv, state.current_player);
@@ -316,38 +314,40 @@ impl MCTSGame for UltTTTMCTSGame {
         new_state
     }
 
-    fn evaluate(state: &Self::State) -> f32 {
+    fn evaluate(state: &Self::State, _game_cache: &mut Self::Cache) -> Option<f32> {
         match state.status {
-            TicTacToeStatus::Player(MonteCarloPlayer::Me) => 1.0,
-            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => 0.0,
-            TicTacToeStatus::Tie => 0.5,
-            TicTacToeStatus::Vacant => f32::NAN,
+            TicTacToeStatus::Player(TwoPlayer::Me) => Some(1.0),
+            TicTacToeStatus::Player(TwoPlayer::Opp) => Some(0.0),
+            TicTacToeStatus::Tie => Some(0.5),
+            TicTacToeStatus::Vacant => None,
         }
     }
-
-    fn is_terminal(state: &Self::State) -> bool {
-        state.status.is_not_vacant()
-    }
-    fn current_player(state: &Self::State) -> MonteCarloPlayer {
+    fn current_player(state: &Self::State) -> TwoPlayer {
         state.current_player
     }
     fn perspective_player() -> Self::Player {
-        MonteCarloPlayer::Me
+        TwoPlayer::Me
     }
 }
 
 pub struct UltTTTHeuristic {}
 
 impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
-    fn evaluate_state(state: &<UltTTTMCTSGame as MCTSGame>::State) -> f32 {
+    type Cache = NoHeuristicCache;
+
+    fn evaluate_state(
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        _game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        _heuristic_cache: &mut Self::Cache,
+    ) -> f32 {
         match state.status {
-            TicTacToeStatus::Player(MonteCarloPlayer::Me) => 1.0,
-            TicTacToeStatus::Player(MonteCarloPlayer::Opp) => 0.0,
+            TicTacToeStatus::Player(TwoPlayer::Me) => 1.0,
+            TicTacToeStatus::Player(TwoPlayer::Opp) => 0.0,
             TicTacToeStatus::Tie => 0.5,
             TicTacToeStatus::Vacant => {
                 // meta progress: wins on status_map
-                let my_wins = state.status_map.count_player_cells(MonteCarloPlayer::Me) as f32;
-                let opp_wins = state.status_map.count_player_cells(MonteCarloPlayer::Opp) as f32;
+                let my_wins = state.status_map.count_player_cells(TwoPlayer::Me) as f32;
+                let opp_wins = state.status_map.count_player_cells(TwoPlayer::Opp) as f32;
                 // mini board threats
                 let mut my_threats = 0.0;
                 let mut opp_threats = 0.0;
@@ -368,6 +368,15 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
                 final_score.clamp(0.0, 1.0)
             }
         }
+    }
+
+    fn evaluate_move(
+        _state: &<UltTTTMCTSGame as MCTSGame>::State,
+        _mv: &<UltTTTMCTSGame as MCTSGame>::Move,
+        _game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        _heuristic_cache: &mut Self::Cache,
+    ) -> f32 {
+        0.0
     }
 }
 
@@ -400,23 +409,28 @@ mod tests {
                 UltTTTSimulationPolicy,
             > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut first_ult_ttt_game_data = UltTTT::new();
-            first_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Me);
+            first_ult_ttt_game_data.set_current_player(TwoPlayer::Me);
             let mut first_time_out = TIME_OUT_FIRST_TURN;
             let mut second_mcts_ult_ttt: PlainMCTS<
                 UltTTTMCTSGame,
                 StaticC,
                 NoUTCCache,
                 ExpandAllTTT,
-                DefaultHeuristic,
+                NoHeuristic,
                 DefaultSimulationPolicy,
             > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut second_ult_ttt_game_data = UltTTT::new();
-            second_ult_ttt_game_data.set_current_player(MonteCarloPlayer::Opp);
+            second_ult_ttt_game_data.set_current_player(TwoPlayer::Opp);
             let mut second_time_out = TIME_OUT_FIRST_TURN;
 
             let mut first = true;
 
-            while !UltTTTMCTSGame::is_terminal(&first_ult_ttt_game_data) {
+            while UltTTTMCTSGame::evaluate(
+                &first_ult_ttt_game_data,
+                &mut first_mcts_ult_ttt.game_cache,
+            )
+            .is_none()
+            {
                 if first {
                     let start = Instant::now();
                     first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data);
@@ -426,16 +440,22 @@ mod tests {
                         number_of_iterations += 1;
                     }
                     first_time_out = TIME_OUT_SUCCESSIVE_TURNS;
-                    let selected_move = first_mcts_ult_ttt.select_move();
+                    let selected_move = *first_mcts_ult_ttt.select_move();
                     eprintln!(
                         "first : {} (number_of_iterations: {})",
                         selected_move.to_ext(),
                         number_of_iterations
                     );
-                    first_ult_ttt_game_data =
-                        UltTTTMCTSGame::apply_move(&first_ult_ttt_game_data, selected_move);
-                    second_ult_ttt_game_data =
-                        UltTTTMCTSGame::apply_move(&second_ult_ttt_game_data, selected_move);
+                    first_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
+                        &first_ult_ttt_game_data,
+                        &selected_move,
+                        &mut first_mcts_ult_ttt.game_cache,
+                    );
+                    second_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
+                        &second_ult_ttt_game_data,
+                        &selected_move,
+                        &mut second_mcts_ult_ttt.game_cache,
+                    );
                     first = false;
                 } else {
                     let start = Instant::now();
@@ -446,26 +466,32 @@ mod tests {
                         number_of_iterations += 1;
                     }
                     second_time_out = TIME_OUT_SUCCESSIVE_TURNS;
-                    let selected_move = second_mcts_ult_ttt.select_move();
+                    let selected_move = *second_mcts_ult_ttt.select_move();
                     eprintln!(
                         "second: {} (number_of_iterations: {})",
                         selected_move.to_ext(),
                         number_of_iterations
                     );
-                    second_ult_ttt_game_data =
-                        UltTTTMCTSGame::apply_move(&second_ult_ttt_game_data, selected_move);
-                    first_ult_ttt_game_data =
-                        UltTTTMCTSGame::apply_move(&first_ult_ttt_game_data, selected_move);
+                    second_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
+                        &second_ult_ttt_game_data,
+                        &selected_move,
+                        &mut second_mcts_ult_ttt.game_cache,
+                    );
+                    first_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
+                        &first_ult_ttt_game_data,
+                        &selected_move,
+                        &mut first_mcts_ult_ttt.game_cache,
+                    );
                     first = true;
                 }
             }
             eprintln!("Game ended");
             eprintln!("{}", first_ult_ttt_game_data);
             match first_ult_ttt_game_data.status {
-                TicTacToeStatus::Player(MonteCarloPlayer::Me) => {
+                TicTacToeStatus::Player(TwoPlayer::Me) => {
                     eprintln!("first winner");
                 }
-                TicTacToeStatus::Player(MonteCarloPlayer::Opp) => {
+                TicTacToeStatus::Player(TwoPlayer::Opp) => {
                     eprintln!("second winner");
                 }
                 TicTacToeStatus::Tie => eprintln!("tie"),
@@ -474,7 +500,11 @@ mod tests {
                     assert!(false, "vacant: Game ended without winner!?");
                 }
             }
-            wins += UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data);
+            wins += UltTTTMCTSGame::evaluate(
+                &first_ult_ttt_game_data,
+                &mut first_mcts_ult_ttt.game_cache,
+            )
+            .unwrap();
         }
         println!("{} wins out of {} matches.", wins, number_of_matches);
         //assert_eq!(wins, 25.0);

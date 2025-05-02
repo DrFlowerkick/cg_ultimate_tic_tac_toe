@@ -71,10 +71,13 @@ fn main() {
     let (opponent_row, opponent_col) = rx.recv().expect("Failed to receive initial input");
     // check if opponent is starting_player
     if opponent_row >= 0 {
-        game_data.set_current_player(MonteCarloPlayer::Opp);
+        game_data.set_current_player(TwoPlayer::Opp);
         let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
-        game_data =
-            UltTTTMCTSGame::apply_move(&game_data, &UltTTTPlayerAction::from_ext(opp_action));
+        game_data = UltTTTMCTSGame::apply_move(
+            &game_data,
+            &UltTTTPlayerAction::from_ext(opp_action),
+            &mut mcts_ult_ttt.game_cache,
+        );
     }
 
     // time out for first turn
@@ -96,8 +99,9 @@ fn main() {
         time_out = time_out_successive_turns;
 
         // select my move and send it to codingame
-        let selected_move = mcts_ult_ttt.select_move();
-        game_data = UltTTTMCTSGame::apply_move(&game_data, selected_move);
+        let selected_move = *mcts_ult_ttt.select_move();
+        game_data =
+            UltTTTMCTSGame::apply_move(&game_data, &selected_move, &mut mcts_ult_ttt.game_cache);
         selected_move.execute_action();
         // set root to my move
         mcts_ult_ttt.set_root(&game_data);
@@ -114,6 +118,7 @@ fn main() {
                     game_data = UltTTTMCTSGame::apply_move(
                         &game_data,
                         &UltTTTPlayerAction::from_ext(opp_action),
+                        &mut mcts_ult_ttt.game_cache,
                     );
                     break;
                 }
