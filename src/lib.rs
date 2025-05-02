@@ -394,7 +394,7 @@ mod tests {
             let mut first_mcts_ult_ttt: PlainMCTS<
                 UltTTTMCTSGame,
                 DynamicC,
-                WithCache,
+                CachedUTC,
                 PWDefaultTTT,
                 UltTTTHeuristic,
                 UltTTTSimulationPolicy,
@@ -405,7 +405,7 @@ mod tests {
             let mut second_mcts_ult_ttt: PlainMCTS<
                 UltTTTMCTSGame,
                 StaticC,
-                NoCache,
+                NoUTCCache,
                 ExpandAllTTT,
                 DefaultHeuristic,
                 DefaultSimulationPolicy,

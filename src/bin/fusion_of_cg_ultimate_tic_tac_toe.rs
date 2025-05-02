@@ -19,7 +19,7 @@ fn main() {
     let mut mcts_ult_ttt: PlainMCTS<
         UltTTTMCTSGame,
         DynamicC,
-        WithCache,
+        CachedUTC,
         PWDefaultTTT,
         UltTTTHeuristic,
         UltTTTSimulationPolicy,
@@ -516,28 +516,28 @@ impl<T: Copy + Clone + Default, const X: usize, const Y: usize> Default for MyMa
     }
 }
 use rand::prelude::IteratorRandom;
-struct PlainMCTS<G, P, C, E, H, S>
+struct PlainMCTS<G, UP, UC, EP, H, SP>
 where
     G: MCTSGame,
-    P: UCTPolicy<G>,
-    C: MCTSCache<G, P>,
-    E: ExpansionPolicy<G>,
+    UP: UCTPolicy<G>,
+    UC: UTCCache<G, UP>,
+    EP: ExpansionPolicy<G>,
     H: Heuristic<G>,
-    S: SimulationPolicy<G, H>,
+    SP: SimulationPolicy<G, H>,
 {
-    nodes: Vec<PlainNode<G, P, C, E, H>>,
+    nodes: Vec<PlainNode<G, UP, UC, EP, H>>,
     root_index: usize,
     exploration_constant: f32,
-    phantom: std::marker::PhantomData<S>,
+    phantom: std::marker::PhantomData<SP>,
 }
-impl<G, P, C, E, H, S> PlainMCTS<G, P, C, E, H, S>
+impl<G, UP, UC, EP, H, SP> PlainMCTS<G, UP, UC, EP, H, SP>
 where
     G: MCTSGame,
-    P: UCTPolicy<G>,
-    C: MCTSCache<G, P>,
-    E: ExpansionPolicy<G>,
+    UP: UCTPolicy<G>,
+    UC: UTCCache<G, UP>,
+    EP: ExpansionPolicy<G>,
     H: Heuristic<G>,
-    S: SimulationPolicy<G, H>,
+    SP: SimulationPolicy<G, H>,
 {
     fn new(exploration_constant: f32) -> Self {
         Self {
@@ -548,14 +548,14 @@ where
         }
     }
 }
-impl<G, P, C, E, H, S> MCTSAlgo<G> for PlainMCTS<G, P, C, E, H, S>
+impl<G, UP, UC, EP, H, SP> MCTSAlgo<G> for PlainMCTS<G, UP, UC, EP, H, SP>
 where
     G: MCTSGame,
-    P: UCTPolicy<G>,
-    C: MCTSCache<G, P>,
-    E: ExpansionPolicy<G>,
+    UP: UCTPolicy<G>,
+    UC: UTCCache<G, UP>,
+    EP: ExpansionPolicy<G>,
     H: Heuristic<G>,
-    S: SimulationPolicy<G, H>,
+    SP: SimulationPolicy<G, H>,
 {
     fn iterate(&mut self) {
         let mut path = vec![self.root_index];
@@ -616,7 +616,7 @@ where
             if G::is_terminal(&current_state) {
                 break G::evaluate(&current_state);
             }
-            if let Some(heuristic) = S::should_cutoff(&current_state, depth) {
+            if let Some(heuristic) = SP::should_cutoff(&current_state, depth) {
                 break heuristic;
             }
             current_state = G::apply_move(
@@ -683,8 +683,6 @@ impl MCTSPlayer for MonteCarloPlayer {
         }
     }
 }
-struct StaticC {}
-impl<G: MCTSGame> UCTPolicy<G> for StaticC {}
 struct DynamicC {}
 impl<G: MCTSGame> UCTPolicy<G> for DynamicC {
     fn exploration_score(visits: usize, parent_visits: usize, c: f32) -> f32 {
@@ -692,14 +690,14 @@ impl<G: MCTSGame> UCTPolicy<G> for DynamicC {
         dynamic_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
-struct WithCache {
+struct CachedUTC {
     exploitation: f32,
     exploration: f32,
     last_parent_visits: usize,
 }
-impl<G: MCTSGame, P: UCTPolicy<G>> MCTSCache<G, P> for WithCache {
+impl<G: MCTSGame, UP: UCTPolicy<G>> UTCCache<G, UP> for CachedUTC {
     fn new() -> Self {
-        WithCache {
+        CachedUTC {
             exploitation: 0.0,
             exploration: 0.0,
             last_parent_visits: 0,
@@ -713,14 +711,14 @@ impl<G: MCTSGame, P: UCTPolicy<G>> MCTSCache<G, P> for WithCache {
         perspective_player: G::Player,
     ) {
         self.exploitation =
-            P::exploitation_score(acc_value, visits, current_player, perspective_player);
+            UP::exploitation_score(acc_value, visits, current_player, perspective_player);
     }
     fn get_exploitation(&self, _v: usize, _a: f32, _c: G::Player, _p: G::Player) -> f32 {
         self.exploitation
     }
     fn update_exploration(&mut self, visits: usize, parent_visits: usize, base_c: f32) {
         if self.last_parent_visits != parent_visits {
-            self.exploration = P::exploration_score(visits, parent_visits, base_c);
+            self.exploration = UP::exploration_score(visits, parent_visits, base_c);
             self.last_parent_visits = parent_visits;
         }
     }
@@ -802,12 +800,12 @@ impl<const MXD: usize, G: MCTSGame, H: Heuristic<G>> SimulationPolicy<G, H>
         }
     }
 }
-struct PlainNode<G, P, C, E, H>
+struct PlainNode<G, UP, UC, EP, H>
 where
     G: MCTSGame,
-    P: UCTPolicy<G>,
-    C: MCTSCache<G, P>,
-    E: ExpansionPolicy<G>,
+    UP: UCTPolicy<G>,
+    UC: UTCCache<G, UP>,
+    EP: ExpansionPolicy<G>,
     H: Heuristic<G>,
 {
     state: G::State,
@@ -815,39 +813,39 @@ where
     accumulated_value: f32,
     mv: Option<G::Move>,
     children: Vec<usize>,
-    cache: C,
-    expansion_policy: E,
-    phantom: std::marker::PhantomData<(P, H)>,
+    utc_cache: UC,
+    expansion_policy: EP,
+    phantom: std::marker::PhantomData<(UP, H)>,
 }
-impl<G, P, C, E, H> PlainNode<G, P, C, E, H>
+impl<G, UP, UC, EP, H> PlainNode<G, UP, UC, EP, H>
 where
     G: MCTSGame,
-    P: UCTPolicy<G>,
-    C: MCTSCache<G, P>,
-    E: ExpansionPolicy<G>,
+    UP: UCTPolicy<G>,
+    UC: UTCCache<G, UP>,
+    EP: ExpansionPolicy<G>,
     H: Heuristic<G>,
 {
     fn root_node(state: G::State) -> Self {
         PlainNode {
-            expansion_policy: E::new(&state),
+            expansion_policy: EP::new(&state),
             state,
             visits: 0,
             accumulated_value: 0.0,
             mv: None,
             children: vec![],
-            cache: C::new(),
+            utc_cache: UC::new(),
             phantom: std::marker::PhantomData,
         }
     }
     fn new(state: G::State, mv: G::Move) -> Self {
         PlainNode {
-            expansion_policy: E::new(&state),
+            expansion_policy: EP::new(&state),
             state,
             visits: 0,
             accumulated_value: 0.0,
             mv: Some(mv),
             children: vec![],
-            cache: C::new(),
+            utc_cache: UC::new(),
             phantom: std::marker::PhantomData,
         }
     }
@@ -858,12 +856,12 @@ where
         &self.children
     }
 }
-impl<G, P, C, E, H> MCTSNode<G> for PlainNode<G, P, C, E, H>
+impl<G, UP, UC, EP, H> MCTSNode<G> for PlainNode<G, UP, UC, EP, H>
 where
     G: MCTSGame,
-    P: UCTPolicy<G>,
-    C: MCTSCache<G, P>,
-    E: ExpansionPolicy<G>,
+    UP: UCTPolicy<G>,
+    UC: UTCCache<G, UP>,
+    EP: ExpansionPolicy<G>,
     H: Heuristic<G>,
 {
     fn get_state(&self) -> &G::State {
@@ -880,7 +878,7 @@ where
     }
     fn add_simulation_result(&mut self, result: f32) {
         self.accumulated_value += result;
-        self.cache.update_exploitation(
+        self.utc_cache.update_exploitation(
             self.visits,
             self.accumulated_value,
             G::current_player(&self.state),
@@ -894,14 +892,17 @@ where
         if self.visits == 0 {
             return f32::INFINITY;
         }
-        let exploitation = self.cache.get_exploitation(
+        let exploitation = self.utc_cache.get_exploitation(
             self.visits,
             self.accumulated_value,
             G::current_player(&self.state),
             perspective_player,
         );
-        self.cache.update_exploration(self.visits, parent_visits, c);
-        let exploration = self.cache.get_exploration(self.visits, parent_visits, c);
+        self.utc_cache
+            .update_exploration(self.visits, parent_visits, c);
+        let exploration = self
+            .utc_cache
+            .get_exploration(self.visits, parent_visits, c);
         exploitation + exploration
     }
 }
@@ -954,7 +955,7 @@ trait UCTPolicy<G: MCTSGame> {
         base_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
-trait MCTSCache<G: MCTSGame, P: UCTPolicy<G>> {
+trait UTCCache<G: MCTSGame, UP: UCTPolicy<G>> {
     fn new() -> Self;
     fn update_exploitation(
         &mut self,

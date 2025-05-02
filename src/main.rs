@@ -35,7 +35,7 @@ fn main() {
     let mut mcts_ult_ttt: PlainMCTS<
         UltTTTMCTSGame,
         DynamicC,
-        WithCache,
+        CachedUTC,
         PWDefaultTTT,
         UltTTTHeuristic,
         UltTTTSimulationPolicy,
