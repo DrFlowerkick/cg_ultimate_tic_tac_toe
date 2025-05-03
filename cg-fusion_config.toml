@@ -51,6 +51,8 @@
 [impl_items]
 include = [
     "add_child@impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G>,H:Heuristic<G>,",
+    "allowed_children",
+    "apply_player_move",
     "count_non_vacant_cells",
     "count_player_cells",
     "execute_action",
@@ -61,8 +63,8 @@ include = [
     "get_children",
     "get_first_vacant_cell",
     "get_mut@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
+    "get_status",
     "get_threats",
-    "increment_game_turn",
     "is_not_vacant",
     "is_vacant",
     "iter@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
@@ -74,8 +76,6 @@ include = [
     "next_player@impl TwoPlayer",
     "next_player@impl UltTTT",
     "root_node",
-    "set_all_to_status",
-    "set_player",
     "set_tie",
     "swap_value",
     "x",
@@ -84,14 +84,11 @@ include = [
 exclude = [
     "get_cell_value@impl UltTTT",
     "iter_diagonal_top_left@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
-    "iter_diagonal_top_right@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>",
-    "next_player@impl TicTacToeGameData",
-    "set_current_player@impl TicTacToeGameData"
+    "iter_diagonal_top_right@impl<T:Copy+Clone+Default,constX:usize,constY:usize> MyMap2D<T,X,Y>"
 ]
 [impl_blocks]
 include = [
     "impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic",
-    "impl MCTSGame for TicTacToeMCTSGame",
     "impl MCTSPlayer for TwoPlayer",
     "impl TicTacToeStatus",
     "impl TwoPlayer",
@@ -101,10 +98,10 @@ include = [
     "impl<G,UP,UC,EP,H> MCTSNode<G> for PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G>,H:Heuristic<G>,",
     "impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G>,H:Heuristic<G>,",
     "impl<G:MCTSGame,UP:UCTPolicy<G>> UTCCache<G,UP> for CachedUTC",
-    "impl<G:MCTSGame> GameCache<G> for NoGameCache",
     "impl<G:MCTSGame> Heuristic<G> for NoHeuristic",
     "impl<G:MCTSGame> HeuristicCache<G> for NoHeuristicCache",
     "impl<G:MCTSGame> UCTPolicy<G> for DynamicC",
+    "impl<State,Move> GameCache<State,Move> for NoGameCache<State,Move>",
     "impl<T:Copy+Clone+Default,constX:usize,constY:usize> Default for MyMap2D<T,X,Y>",
     "impl<constC:usize,constAN:usize,constAD:usize,G:MCTSGame> ExpansionPolicy<G> for ProgressiveWidening<C,AN,AD,G>",
     "impl<constC:usize,constAN:usize,constAD:usize,G:MCTSGame> ProgressiveWidening<C,AN,AD,G>",
@@ -114,6 +111,8 @@ include = [
 ]
 exclude = [
     "impl Display for UltTTT",
+    "impl GameCache<TicTacToeGame,TicTacToePlayerAction> for TicTacToeGameCache",
+    "impl MCTSGame for TicTacToeMCTSGame",
     "impl std::fmt::Display for TicTacToeGameData",
     "impl std::fmt::Display for TicTacToeStatus",
     "impl<G:MCTSGame,H:Heuristic<G>> SimulationPolicy<G,H> for DefaultSimulationPolicy",

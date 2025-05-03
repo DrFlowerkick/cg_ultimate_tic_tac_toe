@@ -26,7 +26,6 @@ macro_rules! parse_input {
 // To debug: eprintln!("Debug message...");
 
 fn main() {
-    let max_number_of_turns = 81;
     let weighting_factor = 1.4;
     let time_out_first_turn = Duration::from_millis(990);
     let time_out_successive_turns = Duration::from_millis(90);
@@ -136,8 +135,5 @@ fn main() {
             }
         }
         eprintln!("Pre-Fill Iterations: {}", number_of_iterations);
-
-        // sanity check
-        assert!(game_data.game_turn <= max_number_of_turns);
     }
 }

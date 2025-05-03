@@ -10,7 +10,6 @@ macro_rules! parse_input {
     };
 }
 fn main() {
-    let max_number_of_turns = 81;
     let weighting_factor = 1.4;
     let time_out_first_turn = Duration::from_millis(990);
     let time_out_successive_turns = Duration::from_millis(90);
@@ -98,7 +97,6 @@ fn main() {
             }
         }
         eprintln!("Pre-Fill Iterations: {}", number_of_iterations);
-        assert!(game_data.game_turn <= max_number_of_turns);
     }
 }
 use std::fmt::Write;
@@ -111,39 +109,43 @@ struct IterUltTTT<'a> {
     iter_finished: bool,
 }
 impl<'a> IterUltTTT<'a> {
-    fn new(ult_ttt_data: &'a UltTTT, player: TwoPlayer, parent_game_turn: usize) -> Self {
+    fn new(ult_ttt_data: &'a UltTTT) -> Self {
         let mut result = IterUltTTT {
             ult_ttt_data,
             player_action: UltTTTPlayerAction::default(),
             next_action_square_is_specified: false,
             iter_finished: false,
         };
-        if parent_game_turn == 0 && player == TwoPlayer::Me {
-            result.player_action.ult_ttt_big = MapPoint::<X, Y>::new(1, 1);
-            result.player_action.ult_ttt_small = MapPoint::<X, Y>::new(0, 0);
-            result.next_action_square_is_specified = true;
-        } else if let Some(next_ult_ttt_big) = ult_ttt_data.next_action_square_is_specified {
-            result.player_action.ult_ttt_big = next_ult_ttt_big;
-            result.player_action.ult_ttt_small = ult_ttt_data
-                .map
-                .get(next_ult_ttt_big)
-                .get_first_vacant_cell()
-                .unwrap()
-                .0;
-            result.next_action_square_is_specified = true;
-        } else {
-            match result.ult_ttt_data.status_map.get_first_vacant_cell() {
-                Some((new_iter_ttt_big, _)) => {
-                    result.player_action.ult_ttt_big = new_iter_ttt_big;
-                    result.player_action.ult_ttt_small = ult_ttt_data
-                        .map
-                        .get(new_iter_ttt_big)
-                        .get_first_vacant_cell()
-                        .unwrap()
-                        .0;
-                }
-                None => result.iter_finished = true,
-            };
+        match ult_ttt_data.next_action_constraint {
+            NextActionConstraint::Init => {
+                result.player_action.ult_ttt_big = MapPoint::<X, Y>::new(1, 1);
+                result.player_action.ult_ttt_small = MapPoint::<X, Y>::new(0, 0);
+                result.next_action_square_is_specified = true;
+            }
+            NextActionConstraint::None => {
+                match result.ult_ttt_data.status_map.get_first_vacant_cell() {
+                    Some((new_iter_ttt_big, _)) => {
+                        result.player_action.ult_ttt_big = new_iter_ttt_big;
+                        result.player_action.ult_ttt_small = ult_ttt_data
+                            .map
+                            .get(new_iter_ttt_big)
+                            .get_first_vacant_cell()
+                            .unwrap()
+                            .0;
+                    }
+                    None => result.iter_finished = true,
+                };
+            }
+            NextActionConstraint::MiniBoard(next_ult_ttt_big) => {
+                result.player_action.ult_ttt_big = next_ult_ttt_big;
+                result.player_action.ult_ttt_small = ult_ttt_data
+                    .map
+                    .get(next_ult_ttt_big)
+                    .get_first_vacant_cell()
+                    .unwrap()
+                    .0;
+                result.next_action_square_is_specified = true;
+            }
         }
         result
     }
@@ -249,23 +251,26 @@ impl UltTTTPlayerAction {
     }
 }
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default)]
+enum NextActionConstraint {
+    #[default]
+    Init,
+    None,
+    MiniBoard(MapPoint<X, Y>),
+}
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Default)]
 struct UltTTT {
     map: MyMap2D<TicTacToeGameData, X, Y>,
     status_map: TicTacToeGameData,
-    status: TicTacToeStatus,
-    next_action_square_is_specified: Option<MapPoint<X, Y>>,
+    next_action_constraint: NextActionConstraint,
     current_player: TwoPlayer,
-    game_turn: usize,
 }
 impl UltTTT {
     fn new() -> Self {
         UltTTT {
             map: MyMap2D::new(),
             status_map: TicTacToeGameData::new(),
-            status: TicTacToeStatus::Vacant,
-            next_action_square_is_specified: None,
+            next_action_constraint: NextActionConstraint::Init,
             current_player: TwoPlayer::Me,
-            game_turn: 0,
         }
     }
     fn set_current_player(&mut self, player: TwoPlayer) {
@@ -274,49 +279,27 @@ impl UltTTT {
     fn next_player(&mut self) {
         self.current_player = self.current_player.next_player();
     }
-    fn increment_game_turn(&mut self) {
-        self.game_turn += 1;
-    }
-    fn execute_player_action(
-        &mut self,
-        player_action: UltTTTPlayerAction,
-        player: TwoPlayer,
-    ) -> TicTacToeStatus {
-        let cell_status = self
-            .map
+    fn execute_player_action(&mut self, player_action: UltTTTPlayerAction, player: TwoPlayer) {
+        self.map
             .get_mut(player_action.ult_ttt_big)
-            .set_player(player_action.ult_ttt_small, player);
-        self.status = match cell_status {
-            TicTacToeStatus::Vacant => self.status,
+            .apply_player_move(player_action.ult_ttt_small, player);
+        match self.map.get(player_action.ult_ttt_big).get_status() {
+            TicTacToeStatus::Vacant => (),
             TicTacToeStatus::Player(winner) => {
-                self.map
-                    .get_mut(player_action.ult_ttt_big)
-                    .set_all_to_status();
                 self.status_map
-                    .set_player(player_action.ult_ttt_big, winner)
+                    .apply_player_move(player_action.ult_ttt_big, winner);
             }
             TicTacToeStatus::Tie => self.status_map.set_tie(player_action.ult_ttt_big),
         };
-        if self.status == TicTacToeStatus::Tie {
-            let my_squares = self.status_map.count_player_cells(TwoPlayer::Me);
-            let opp_squares = self.status_map.count_player_cells(TwoPlayer::Opp);
-            self.status = match my_squares.cmp(&opp_squares) {
-                Ordering::Greater => TicTacToeStatus::Player(TwoPlayer::Me),
-                Ordering::Less => TicTacToeStatus::Player(TwoPlayer::Opp),
-                Ordering::Equal => TicTacToeStatus::Tie,
-            };
+        self.next_action_constraint = if self
+            .status_map
+            .get_cell_value(player_action.ult_ttt_small)
+            .is_vacant()
+        {
+            NextActionConstraint::MiniBoard(player_action.ult_ttt_small)
         } else {
-            self.next_action_square_is_specified = if self
-                .status_map
-                .get_cell_value(player_action.ult_ttt_small)
-                .is_vacant()
-            {
-                Some(player_action.ult_ttt_small)
-            } else {
-                None
-            };
-        }
-        self.status
+            NextActionConstraint::None
+        };
     }
 }
 struct UltTTTMCTSGame {}
@@ -324,13 +307,9 @@ impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTPlayerAction;
     type Player = TwoPlayer;
-    type Cache = NoGameCache;
+    type Cache = NoGameCache<UltTTT, UltTTTPlayerAction>;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
-        Box::new(IterUltTTT::new(
-            state,
-            state.current_player,
-            state.game_turn,
-        ))
+        Box::new(IterUltTTT::new(state))
     }
     fn apply_move(
         state: &Self::State,
@@ -340,11 +319,20 @@ impl MCTSGame for UltTTTMCTSGame {
         let mut new_state = *state;
         new_state.execute_player_action(*mv, state.current_player);
         new_state.next_player();
-        new_state.increment_game_turn();
         new_state
     }
     fn evaluate(state: &Self::State, _game_cache: &mut Self::Cache) -> Option<f32> {
-        match state.status {
+        let mut status = state.status_map.get_status();
+        if status == TicTacToeStatus::Tie {
+            let my_squares = state.status_map.count_player_cells(TwoPlayer::Me);
+            let opp_squares = state.status_map.count_player_cells(TwoPlayer::Opp);
+            status = match my_squares.cmp(&opp_squares) {
+                Ordering::Greater => TicTacToeStatus::Player(TwoPlayer::Me),
+                Ordering::Less => TicTacToeStatus::Player(TwoPlayer::Opp),
+                Ordering::Equal => TicTacToeStatus::Tie,
+            };
+        }
+        match status {
             TicTacToeStatus::Player(TwoPlayer::Me) => Some(1.0),
             TicTacToeStatus::Player(TwoPlayer::Opp) => Some(0.0),
             TicTacToeStatus::Tie => Some(0.5),
@@ -366,7 +354,7 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
         _game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
         _heuristic_cache: &mut Self::Cache,
     ) -> f32 {
-        match state.status {
+        match state.status_map.get_status() {
             TicTacToeStatus::Player(TwoPlayer::Me) => 1.0,
             TicTacToeStatus::Player(TwoPlayer::Opp) => 0.0,
             TicTacToeStatus::Tie => 0.5,
@@ -718,10 +706,14 @@ impl MCTSPlayer for TwoPlayer {
         }
     }
 }
-struct NoGameCache;
-impl<G: MCTSGame> GameCache<G> for NoGameCache {
+struct NoGameCache<State, Move> {
+    phantom: std::marker::PhantomData<(State, Move)>,
+}
+impl<State, Move> GameCache<State, Move> for NoGameCache<State, Move> {
     fn new() -> Self {
-        NoGameCache
+        NoGameCache {
+            phantom: std::marker::PhantomData,
+        }
     }
 }
 struct DynamicC {}
@@ -765,6 +757,25 @@ impl<G: MCTSGame, UP: UCTPolicy<G>> UTCCache<G, UP> for CachedUTC {
     }
     fn get_exploration(&self, _v: usize, _p: usize, _b: f32) -> f32 {
         self.exploration
+    }
+}
+struct ExpandAll<G: MCTSGame> {
+    moves: Vec<G::Move>,
+}
+impl<G: MCTSGame> ExpansionPolicy<G> for ExpandAll<G> {
+    fn new(state: &<G as MCTSGame>::State, is_terminal: bool) -> Self {
+        let moves = if is_terminal {
+            vec![]
+        } else {
+            G::available_moves(state).collect::<Vec<_>>()
+        };
+        ExpandAll { moves }
+    }
+    fn should_expand(&self, _v: usize, _n: usize) -> bool {
+        !self.moves.is_empty()
+    }
+    fn pop_expandable_move(&mut self, _v: usize, _n: usize) -> Option<<G as MCTSGame>::Move> {
+        self.moves.pop()
     }
 }
 struct ProgressiveWidening<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> {
@@ -959,22 +970,22 @@ where
 trait MCTSPlayer: PartialEq {
     fn next(&self) -> Self;
 }
-trait GameCache<G: MCTSGame> {
+trait GameCache<State, Move> {
     fn new() -> Self;
-    fn get_applied_state(&self, _state: &G::State, _mv: &G::Move) -> Option<G::State> {
+    fn get_applied_state(&self, _state: &State, _mv: &Move) -> Option<&State> {
         None
     }
-    fn insert_applied_state(&mut self, _state: &G::State, _mv: &G::Move, _result: G::State) {}
-    fn get_terminal_value(&self, _state: &G::State) -> Option<f32> {
+    fn insert_applied_state(&mut self, _state: &State, _mv: &Move, _result: State) {}
+    fn get_terminal_value(&self, _state: &State) -> Option<&Option<f32>> {
         None
     }
-    fn insert_terminal_value(&mut self, _tate: &G::State, _value: f32) {}
+    fn insert_terminal_value(&mut self, _state: &State, _value: Option<f32>) {}
 }
 trait MCTSGame: Sized {
     type State: Clone + PartialEq;
     type Move;
     type Player: MCTSPlayer;
-    type Cache: GameCache<Self>;
+    type Cache: GameCache<Self::State, Self::Move>;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a>;
     fn apply_move(
         state: &Self::State,
@@ -1099,81 +1110,106 @@ impl TicTacToeStatus {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default)]
 struct TicTacToeGameData {
     map: MyMap2D<TicTacToeStatus, X, Y>,
-    status: TicTacToeStatus,
-    num_me_cells: u8,
-    num_opp_cells: u8,
-    num_tie_cells: u8,
-    current_player: TwoPlayer,
 }
 impl TicTacToeGameData {
     fn new() -> Self {
         TicTacToeGameData {
             map: MyMap2D::init(TicTacToeStatus::Vacant),
-            status: TicTacToeStatus::Vacant,
-            num_me_cells: 0,
-            num_opp_cells: 0,
-            num_tie_cells: 0,
-            current_player: TwoPlayer::Me,
         }
     }
-    fn check_status_for_one_line<'a>(
+    fn get_status(&self) -> TicTacToeStatus {
+        if self.map.iter().all(|(_, v)| v.is_not_vacant()) {
+            return TicTacToeStatus::Tie;
+        }
+        for rc in 0..3 {
+            if let TicTacToeStatus::Player(player) =
+                self.get_status_for_one_line(self.map.iter_row(rc).map(|(_, v)| v))
+            {
+                return TicTacToeStatus::Player(player);
+            }
+            if let TicTacToeStatus::Player(player) =
+                self.get_status_for_one_line(self.map.iter_column(rc).map(|(_, v)| v))
+            {
+                return TicTacToeStatus::Player(player);
+            }
+        }
+        if let TicTacToeStatus::Player(player) =
+            self.get_status_for_one_line(self.iter_diagonal_top_left())
+        {
+            return TicTacToeStatus::Player(player);
+        }
+        if let TicTacToeStatus::Player(player) =
+            self.get_status_for_one_line(self.iter_diagonal_top_right())
+        {
+            return TicTacToeStatus::Player(player);
+        }
+        TicTacToeStatus::Vacant
+    }
+    fn get_status_for_one_line<'a>(
         &self,
         line: impl Iterator<Item = &'a TicTacToeStatus>,
     ) -> TicTacToeStatus {
-        let mut winner = TicTacToeStatus::Tie;
+        let mut winner = TicTacToeStatus::Vacant;
         for (index, element) in line.enumerate() {
             if index == 0 {
                 match element {
                     TicTacToeStatus::Player(player) => winner = TicTacToeStatus::Player(*player),
-                    _ => return TicTacToeStatus::Tie,
+                    _ => return TicTacToeStatus::Vacant,
                 }
             } else if winner != *element {
-                return TicTacToeStatus::Tie;
+                return TicTacToeStatus::Vacant;
             }
         }
         winner
     }
-    fn check_status(&mut self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
-        let check_lines = match self.map.get(cell) {
-            TicTacToeStatus::Vacant => false,
-            TicTacToeStatus::Player(TwoPlayer::Me) => self.num_me_cells > 2,
-            TicTacToeStatus::Player(TwoPlayer::Opp) => self.num_opp_cells > 2,
-            TicTacToeStatus::Tie => false,
-        };
-        if check_lines {
-            if let TicTacToeStatus::Player(player) =
-                self.check_status_for_one_line(self.map.iter_row(cell.y()).map(|(_, v)| v))
-            {
-                self.status = TicTacToeStatus::Player(player);
-                return self.status;
-            }
-            if let TicTacToeStatus::Player(player) =
-                self.check_status_for_one_line(self.map.iter_column(cell.x()).map(|(_, v)| v))
-            {
-                self.status = TicTacToeStatus::Player(player);
-                return self.status;
-            }
-            if cell.x() == cell.y() {
-                if let TicTacToeStatus::Player(player) =
-                    self.check_status_for_one_line(self.iter_diagonal_top_left())
-                {
-                    self.status = TicTacToeStatus::Player(player);
-                    return self.status;
-                }
-            }
-            if cell.x() + cell.y() == 2 {
-                if let TicTacToeStatus::Player(player) =
-                    self.check_status_for_one_line(self.iter_diagonal_top_right())
-                {
-                    self.status = TicTacToeStatus::Player(player);
-                    return self.status;
-                }
-            }
+    fn iter_diagonal_top_left(&self) -> impl Iterator<Item = &'_ TicTacToeStatus> {
+        [(0_usize, 0_usize), (1, 1), (2, 2)]
+            .iter()
+            .map(move |p| self.map.get((*p).into()))
+    }
+    fn iter_diagonal_top_right(&self) -> impl Iterator<Item = &'_ TicTacToeStatus> {
+        [(2_usize, 0_usize), (1, 1), (0, 2)]
+            .iter()
+            .map(move |p| self.map.get((*p).into()))
+    }
+    fn apply_player_move(&mut self, cell: MapPoint<X, Y>, player: TwoPlayer) {
+        if self
+            .map
+            .swap_value(cell, TicTacToeStatus::Player(player))
+            .is_not_vacant()
+        {
+            panic!("Set player on not vacant cell.");
         }
-        if self.num_me_cells + self.num_opp_cells + self.num_tie_cells == 9 {
-            self.status = TicTacToeStatus::Tie;
+    }
+    fn set_tie(&mut self, cell: MapPoint<X, Y>) {
+        if self
+            .map
+            .swap_value(cell, TicTacToeStatus::Tie)
+            .is_not_vacant()
+        {
+            panic!("Set tie on not vacant cell.");
         }
-        self.status
+    }
+    fn get_cell_value(&self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
+        *self.map.get(cell)
+    }
+    fn get_first_vacant_cell(&self) -> Option<(MapPoint<X, Y>, &TicTacToeStatus)> {
+        self.map.iter().find(|(_, v)| v.is_vacant())
+    }
+    fn count_player_cells(&self, count_player: TwoPlayer) -> usize {
+        self.map
+            .iter()
+            .filter(|(_, v)| match v {
+                TicTacToeStatus::Player(player) => *player == count_player,
+                _ => false,
+            })
+            .count()
+    }
+    fn iter_map(&self) -> impl Iterator<Item = (MapPoint<X, Y>, &TicTacToeStatus)> {
+        self.map.iter()
+    }
+    fn count_non_vacant_cells(&self) -> usize {
+        self.map.iter().filter(|(_, v)| v.is_not_vacant()).count()
     }
     fn check_threat_for_one_line<'a>(
         &self,
@@ -1202,9 +1238,6 @@ impl TicTacToeGameData {
         }
     }
     fn get_threats(&self) -> (u8, u8) {
-        if self.status.is_not_vacant() || (self.num_me_cells < 2 && self.num_opp_cells < 2) {
-            return (0, 0);
-        }
         let mut me_threat = 0;
         let mut opp_threat = 0;
         for rc in 0..3 {
@@ -1230,70 +1263,5 @@ impl TicTacToeGameData {
             self.iter_diagonal_top_right(),
         );
         (me_threat, opp_threat)
-    }
-    fn iter_diagonal_top_left(&self) -> impl Iterator<Item = &'_ TicTacToeStatus> {
-        [(0_usize, 0_usize), (1, 1), (2, 2)]
-            .iter()
-            .map(move |p| self.map.get((*p).into()))
-    }
-    fn iter_diagonal_top_right(&self) -> impl Iterator<Item = &'_ TicTacToeStatus> {
-        [(2_usize, 0_usize), (1, 1), (0, 2)]
-            .iter()
-            .map(move |p| self.map.get((*p).into()))
-    }
-    fn set_player(&mut self, cell: MapPoint<X, Y>, player: TwoPlayer) -> TicTacToeStatus {
-        match player {
-            TwoPlayer::Me => {
-                self.num_me_cells += 1;
-            }
-            TwoPlayer::Opp => {
-                self.num_opp_cells += 1;
-            }
-        }
-        if self
-            .map
-            .swap_value(cell, TicTacToeStatus::Player(player))
-            .is_not_vacant()
-        {
-            dbg!(self.map.get(cell));
-            panic!("Set player on not vacant cell.");
-        }
-        self.check_status(cell)
-    }
-    fn set_tie(&mut self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
-        self.num_tie_cells += 1;
-        if self
-            .map
-            .swap_value(cell, TicTacToeStatus::Tie)
-            .is_not_vacant()
-        {
-            panic!("Set tie on not vacant cell.");
-        }
-        self.check_status(cell)
-    }
-    fn set_all_to_status(&mut self) -> TicTacToeStatus {
-        self.map = MyMap2D::init(self.status);
-        self.status
-    }
-    fn get_cell_value(&self, cell: MapPoint<X, Y>) -> TicTacToeStatus {
-        *self.map.get(cell)
-    }
-    fn get_first_vacant_cell(&self) -> Option<(MapPoint<X, Y>, &TicTacToeStatus)> {
-        self.map.iter().find(|(_, v)| v.is_vacant())
-    }
-    fn count_player_cells(&self, count_player: TwoPlayer) -> usize {
-        self.map
-            .iter()
-            .filter(|(_, v)| match v {
-                TicTacToeStatus::Player(player) => *player == count_player,
-                _ => false,
-            })
-            .count()
-    }
-    fn count_non_vacant_cells(&self) -> usize {
-        self.map.iter().filter(|(_, v)| v.is_not_vacant()).count()
-    }
-    fn iter_map(&self) -> impl Iterator<Item = (MapPoint<X, Y>, &TicTacToeStatus)> {
-        self.map.iter()
     }
 }
