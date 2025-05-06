@@ -1,12 +1,12 @@
-use my_lib::my_map_point::*;
 use my_lib::my_monte_carlo_tree_search::*;
+use my_lib::my_tic_tac_toe::TicTacToeStatus;
 use std::io;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::{
-    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTPlayerAction, UltTTTSimulationPolicy, U, V,
+    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTMove, UltTTTSimulationPolicy,
 };
 
 type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
@@ -70,11 +70,11 @@ fn main() {
     let (opponent_row, opponent_col) = rx.recv().expect("Failed to receive initial input");
     // check if opponent is starting_player
     if opponent_row >= 0 {
-        game_data.set_current_player(TwoPlayer::Opp);
-        let opp_action = MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
+        game_data.set_current_player(TicTacToeStatus::Opp);
+        let opp_action = (opponent_col as u8, opponent_row as u8);
         game_data = UltTTTMCTSGame::apply_move(
             &game_data,
-            &UltTTTPlayerAction::from_ext(opp_action),
+            &UltTTTMove::from(opp_action),
             &mut mcts_ult_ttt.game_cache,
         );
     }
@@ -112,11 +112,10 @@ fn main() {
             match rx.try_recv() {
                 Ok((opponent_row, opponent_col)) => {
                     // codingame input received
-                    let opp_action =
-                        MapPoint::<U, V>::new(opponent_col as usize, opponent_row as usize);
+                    let opp_action = (opponent_col as u8, opponent_row as u8);
                     game_data = UltTTTMCTSGame::apply_move(
                         &game_data,
-                        &UltTTTPlayerAction::from_ext(opp_action),
+                        &UltTTTMove::from(opp_action),
                         &mut mcts_ult_ttt.game_cache,
                     );
                     break;
