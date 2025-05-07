@@ -6,10 +6,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::{
-    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTMove, UltTTTSimulationPolicy,
+    UltTTT, UltTTTGameCache, UltTTTHeuristic, UltTTTHeuristicCache, UltTTTMCTSGame, UltTTTMove,
+    UltTTTSimulationPolicy,
 };
 
-type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
+type PWDefaultTTT = PWDefault<UltTTTMCTSGame<UltTTTGameCache>>;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -32,11 +33,11 @@ fn main() {
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGame,
+        UltTTTMCTSGame<UltTTTGameCache>,
         DynamicC,
         CachedUTC,
         PWDefaultTTT,
-        UltTTTHeuristic,
+        UltTTTHeuristic<UltTTTHeuristicCache<UltTTTGameCache>>,
         UltTTTSimulationPolicy,
     > = PlainMCTS::new(weighting_factor);
 
@@ -74,7 +75,7 @@ fn main() {
         let opp_action = (opponent_col as u8, opponent_row as u8);
         game_data = UltTTTMCTSGame::apply_move(
             &game_data,
-            &UltTTTMove::from(opp_action),
+            &UltTTTMove::try_from(opp_action).unwrap(),
             &mut mcts_ult_ttt.game_cache,
         );
     }
@@ -115,7 +116,7 @@ fn main() {
                     let opp_action = (opponent_col as u8, opponent_row as u8);
                     game_data = UltTTTMCTSGame::apply_move(
                         &game_data,
-                        &UltTTTMove::from(opp_action),
+                        &UltTTTMove::try_from(opp_action).unwrap(),
                         &mut mcts_ult_ttt.game_cache,
                     );
                     break;

@@ -177,11 +177,19 @@ impl UltTTT {
     fn next_player(&mut self) {
         self.current_player = self.current_player.next();
     }
-    fn execute_player_move(&mut self, player_move: UltTTTMove, player: TicTacToeStatus) {
+    fn execute_player_move(
+        &mut self,
+        player_move: UltTTTMove,
+        player: TicTacToeStatus,
+        _game_cache: &mut NoGameCache<UltTTT, UltTTTMove>,
+    ) {
         self.map
             .get_cell_mut(player_move.status_index)
             .set_cell_value(player_move.mini_board_index, player);
-        let status = self.map.get_cell(player_move.status_index).get_status();
+        let status = self
+            .map
+            .get_cell(player_move.status_index)
+            .get_status_increment(&player_move.mini_board_index);
         if !status.is_vacant() {
             self.status_map
                 .set_cell_value(player_move.status_index, status);
@@ -240,10 +248,10 @@ impl MCTSGame for UltTTTMCTSGame {
     fn apply_move(
         state: &Self::State,
         mv: &Self::Move,
-        _game_cache: &mut Self::Cache,
+        game_cache: &mut Self::Cache,
     ) -> Self::State {
         let mut new_state = *state;
-        new_state.execute_player_move(*mv, state.current_player);
+        new_state.execute_player_move(*mv, state.current_player, game_cache);
         new_state.next_player();
         new_state
     }
@@ -269,13 +277,16 @@ impl MCTSGame for UltTTTMCTSGame {
 }
 struct UltTTTHeuristic {}
 impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
-    type Cache = NoHeuristicCache;
+    type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
     fn evaluate_state(
         state: &<UltTTTMCTSGame as MCTSGame>::State,
-        _game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
-        _heuristic_cache: &mut Self::Cache,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        heuristic_cache: &mut Self::Cache,
     ) -> f32 {
-        match state.status_map.get_status().evaluate() {
+        if let Some(cache_value) = heuristic_cache.get_intermediate_score(state) {
+            return cache_value;
+        }
+        let heuristic = match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
             None => {
                 let my_wins = state.status_map.count_me_cells() as f32;
@@ -296,7 +307,9 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
                     + threat_weight * (my_threats - opp_threats) / 20.0;
                 final_score.clamp(0.0, 1.0)
             }
-        }
+        };
+        heuristic_cache.insert_intermediate_score(state, heuristic);
+        heuristic
     }
     fn evaluate_move(
         _state: &<UltTTTMCTSGame as MCTSGame>::State,
@@ -308,6 +321,7 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
     }
 }
 type UltTTTSimulationPolicy = HeuristicCutoff<20>;
+use std::convert::TryFrom;
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 enum CellIndex3x3 {
@@ -497,8 +511,8 @@ where
                         &mv,
                         &mut self.game_cache,
                     );
-                    let is_terminal = G::evaluate(&new_state, &mut self.game_cache).is_some();
-                    let new_node = PlainNode::new(new_state, mv, is_terminal);
+                    let expansion_policy = EP::new(&new_state, &mut self.game_cache);
+                    let new_node = PlainNode::new(new_state, mv, expansion_policy);
                     self.nodes.push(new_node);
                     let child_index = self.nodes.len() - 1;
                     self.nodes[current_index].add_child(child_index);
@@ -550,7 +564,9 @@ where
             }
         }
         self.nodes.clear();
-        self.nodes.push(PlainNode::root_node(state.clone()));
+        let expansion_policy = EP::new(state, &mut self.game_cache);
+        self.nodes
+            .push(PlainNode::root_node(state.clone(), expansion_policy));
         self.root_index = 0;
         false
     }
@@ -623,8 +639,8 @@ struct ExpandAll<G: MCTSGame> {
     moves: Vec<G::Move>,
 }
 impl<G: MCTSGame> ExpansionPolicy<G> for ExpandAll<G> {
-    fn new(state: &<G as MCTSGame>::State, is_terminal: bool) -> Self {
-        let moves = if is_terminal {
+    fn new(state: &<G as MCTSGame>::State, game_cache: &mut <G as MCTSGame>::Cache) -> Self {
+        let moves = if game_cache.get_terminal_value(state).is_some() {
             vec![]
         } else {
             G::available_moves(state).collect::<Vec<_>>()
@@ -656,8 +672,8 @@ impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame>
 impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> ExpansionPolicy<G>
     for ProgressiveWidening<C, AN, AD, G>
 {
-    fn new(state: &<G as MCTSGame>::State, is_terminal: bool) -> Self {
-        let unexpanded_moves = if is_terminal {
+    fn new(state: &<G as MCTSGame>::State, game_cache: &mut <G as MCTSGame>::Cache) -> Self {
+        let unexpanded_moves = if game_cache.get_terminal_value(state).is_some() {
             vec![]
         } else {
             let mut unexpanded_moves = G::available_moves(state).collect::<Vec<_>>();
@@ -698,15 +714,19 @@ impl<const MXD: usize, G: MCTSGame, H: Heuristic<G>> SimulationPolicy<G, H>
         }
     }
 }
-struct NoHeuristicCache {}
-impl<G: MCTSGame> HeuristicCache<G> for NoHeuristicCache {
+struct NoHeuristicCache<State, Move> {
+    phantom: std::marker::PhantomData<(State, Move)>,
+}
+impl<State, Move> HeuristicCache<State, Move> for NoHeuristicCache<State, Move> {
     fn new() -> Self {
-        NoHeuristicCache {}
+        NoHeuristicCache {
+            phantom: std::marker::PhantomData,
+        }
     }
 }
 struct NoHeuristic {}
 impl<G: MCTSGame> Heuristic<G> for NoHeuristic {
-    type Cache = NoHeuristicCache;
+    type Cache = NoHeuristicCache<G::State, G::Move>;
     fn evaluate_state(
         state: &<G as MCTSGame>::State,
         game_cache: &mut <G as MCTSGame>::Cache,
@@ -748,9 +768,9 @@ where
     EP: ExpansionPolicy<G>,
     H: Heuristic<G>,
 {
-    fn root_node(state: G::State) -> Self {
+    fn root_node(state: G::State, expansion_policy: EP) -> Self {
         PlainNode {
-            expansion_policy: EP::new(&state, false),
+            expansion_policy,
             state,
             visits: 0,
             accumulated_value: 0.0,
@@ -760,9 +780,9 @@ where
             phantom: std::marker::PhantomData,
         }
     }
-    fn new(state: G::State, mv: G::Move, is_terminal: bool) -> Self {
+    fn new(state: G::State, mv: G::Move, expansion_policy: EP) -> Self {
         PlainNode {
-            expansion_policy: EP::new(&state, is_terminal),
+            expansion_policy,
             state,
             visits: 0,
             accumulated_value: 0.0,
@@ -910,24 +930,24 @@ trait UTCCache<G: MCTSGame, UP: UCTPolicy<G>> {
     fn get_exploration(&self, visits: usize, parent_visits: usize, base_c: f32) -> f32;
 }
 trait ExpansionPolicy<G: MCTSGame> {
-    fn new(state: &G::State, is_terminal: bool) -> Self;
+    fn new(state: &G::State, game_cache: &mut G::Cache) -> Self;
     fn should_expand(&self, visits: usize, num_parent_children: usize) -> bool;
     fn pop_expandable_move(&mut self, visits: usize, num_parent_children: usize)
         -> Option<G::Move>;
 }
-trait HeuristicCache<G: MCTSGame> {
+trait HeuristicCache<State, Move> {
     fn new() -> Self;
-    fn get_intermediate_score(&self, _state: &G::State) -> Option<f32> {
+    fn get_intermediate_score(&self, _state: &State) -> Option<f32> {
         None
     }
-    fn insert_intermediate_score(&mut self, _state: &G::State, _value: f32) {}
-    fn get_move_score(&self, _state: &G::State, _mv: &G::Move) -> Option<f32> {
+    fn insert_intermediate_score(&mut self, _state: &State, _value: f32) {}
+    fn get_move_score(&self, _state: &State, _mv: &Move) -> Option<f32> {
         None
     }
-    fn insert_move_score(&mut self, _state: &G::State, _mv: &G::Move, _value: f32) {}
+    fn insert_move_score(&mut self, _state: &State, _mv: &Move, _value: f32) {}
 }
 trait Heuristic<G: MCTSGame> {
-    type Cache: HeuristicCache<G>;
+    type Cache: HeuristicCache<G::State, G::Move>;
     fn evaluate_state(
         state: &G::State,
         game_cache: &mut G::Cache,
@@ -1007,6 +1027,26 @@ impl TicTacToeGameData {
     }
     fn get_status(&self) -> TicTacToeStatus {
         for score_line in Self::SCORE_LINES.iter() {
+            match score_line
+                .iter()
+                .map(|cell| *self.map.get_cell(*cell) as i8)
+                .sum()
+            {
+                3 => return TicTacToeStatus::Me,
+                -3 => return TicTacToeStatus::Opp,
+                _ => (),
+            }
+        }
+        if self.map.iterate().all(|(_, v)| v.is_not_vacant()) {
+            return TicTacToeStatus::Tie;
+        }
+        TicTacToeStatus::Vacant
+    }
+    fn get_status_increment(&self, cell: &CellIndex3x3) -> TicTacToeStatus {
+        for score_line in Self::SCORE_LINES.iter() {
+            if !score_line.contains(cell) {
+                continue;
+            }
             match score_line
                 .iter()
                 .map(|cell| *self.map.get_cell(*cell) as i8)
