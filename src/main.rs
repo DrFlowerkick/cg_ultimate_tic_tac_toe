@@ -6,11 +6,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::{
-    UltTTT, UltTTTGameCache, UltTTTHeuristic, UltTTTHeuristicCache, UltTTTMCTSGame, UltTTTMove,
+    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTMove,
     UltTTTSimulationPolicy,
 };
 
-type PWDefaultTTT = PWDefault<UltTTTMCTSGame<UltTTTGameCache>>;
+type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -33,11 +33,11 @@ fn main() {
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGame<UltTTTGameCache>,
+        UltTTTMCTSGame,
         DynamicC,
         CachedUTC,
         PWDefaultTTT,
-        UltTTTHeuristic<UltTTTHeuristicCache<UltTTTGameCache>>,
+        UltTTTHeuristic,
         UltTTTSimulationPolicy,
     > = PlainMCTS::new(weighting_factor);
 

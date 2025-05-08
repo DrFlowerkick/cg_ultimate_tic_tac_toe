@@ -5,7 +5,6 @@ use my_lib::my_monte_carlo_tree_search::*;
 use my_lib::my_tic_tac_toe::*;
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Display;
 use std::fmt::Write;
@@ -134,15 +133,13 @@ impl Display for UltTTT {
     }
 }
 
-pub struct UltTTTMCTSGame<GC: GameCache<UltTTT, UltTTTMove>> {
-    phantom: std::marker::PhantomData<GC>,
-}
+pub struct UltTTTMCTSGame {}
 
-impl<GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait> MCTSGame for UltTTTMCTSGame<GC> {
+impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTMove;
     type Player = TicTacToeStatus;
-    type Cache = GC;
+    type Cache = NoGameCache<UltTTT, UltTTTMove>;
 
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
         match state.next_action_constraint {
@@ -182,7 +179,7 @@ impl<GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait> MCTSGame for UltT
     fn apply_move(
         state: &Self::State,
         mv: &Self::Move,
-        game_cache: &mut Self::Cache,
+        _game_cache: &mut Self::Cache,
     ) -> Self::State {
         let mut new_state = *state;
         // apply the move for current player
@@ -190,21 +187,10 @@ impl<GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait> MCTSGame for UltT
             .map
             .get_cell_mut(mv.status_index)
             .set_cell_value(mv.mini_board_index, state.current_player);
-        let status = game_cache.cache_tic_tac_toe_status_increment(
-            new_state.map.get_cell(mv.status_index),
-            mv.mini_board_index,
-        );
+        let status = 
+            new_state.map.get_cell(mv.status_index).get_status_increment(&mv.mini_board_index);
         if !status.is_vacant() {
-            // depending on cache it may be useful to set all cells to status;
-            // e.g. if we cache nodes, identical states of status map may result from different moves in mini boards,
-            // If we do net set all cells, this may still result in different nodes in the tree, which would
-            // reduce cache effectiveness.
-            // at the current state we do not need this
-            /*self.map
-            .get_cell_mut(player_move.status_index)
-            .set_all_cells(status);*/
             new_state.status_map.set_cell_value(mv.status_index, status);
-            game_cache.cache_tic_tac_toe_status_increment(&new_state.status_map, mv.status_index);
         }
 
         // player_move.mini_board_index points to next TicTacToe for next player to set new value.
@@ -223,8 +209,8 @@ impl<GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait> MCTSGame for UltT
         new_state
     }
 
-    fn evaluate(state: &Self::State, game_cache: &mut Self::Cache) -> Option<f32> {
-        let mut status = game_cache.cache_tic_tac_toe_status(&state.status_map);
+    fn evaluate(state: &Self::State, _game_cache: &mut Self::Cache) -> Option<f32> {
+        let mut status = state.status_map.get_status();
         if status == TicTacToeStatus::Tie {
             // game finished without direct winner
             // count for each player number of won squares; most squares won wins game
@@ -246,89 +232,17 @@ impl<GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait> MCTSGame for UltT
     }
 }
 
-pub trait UltTTTGameCacheTrait {
-    fn cache_tic_tac_toe_status(&mut self, ttt: &TicTacToeGameData) -> TicTacToeStatus;
-    fn cache_tic_tac_toe_status_increment(
-        &mut self,
-        ttt: &TicTacToeGameData,
-        cell: CellIndex3x3,
-    ) -> TicTacToeStatus;
-}
+pub struct UltTTTHeuristic {}
 
-pub struct UltTTTGameCache {
-    pub tic_tac_toe_cache: HashMap<TicTacToeGameData, TicTacToeStatus>,
-    pub cache_usage: usize,
-}
-
-impl UltTTTGameCacheTrait for UltTTTGameCache {
-    fn cache_tic_tac_toe_status(&mut self, ttt: &TicTacToeGameData) -> TicTacToeStatus {
-        if let Some(cached_status) = self.tic_tac_toe_cache.get(ttt) {
-            self.cache_usage += 1;
-            *cached_status
-        } else {
-            let status = ttt.get_status();
-            self.tic_tac_toe_cache.insert(*ttt, status);
-            status
-        }
-    }
-    fn cache_tic_tac_toe_status_increment(
-        &mut self,
-        ttt: &TicTacToeGameData,
-        cell: CellIndex3x3,
-    ) -> TicTacToeStatus {
-        if let Some(cached_status) = self.tic_tac_toe_cache.get(ttt) {
-            self.cache_usage += 1;
-            *cached_status
-        } else {
-            let status = ttt.get_status_increment(&cell);
-            self.tic_tac_toe_cache.insert(*ttt, status);
-            status
-        }
-    }
-}
-
-impl GameCache<UltTTT, UltTTTMove> for UltTTTGameCache {
-    fn new() -> Self {
-        UltTTTGameCache {
-            tic_tac_toe_cache: HashMap::new(),
-            cache_usage: 0,
-        }
-    }
-}
-
-impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
-    fn cache_tic_tac_toe_status(&mut self, ttt: &TicTacToeGameData) -> TicTacToeStatus {
-        ttt.get_status()
-    }
-    fn cache_tic_tac_toe_status_increment(
-        &mut self,
-        ttt: &TicTacToeGameData,
-        cell: CellIndex3x3,
-    ) -> TicTacToeStatus {
-        ttt.get_status_increment(&cell)
-    }
-}
-
-pub struct UltTTTHeuristic<HC: HeuristicCache<UltTTT, UltTTTMove>> {
-    phantom: std::marker::PhantomData<HC>,
-}
-
-impl<
-        GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait,
-        HC: HeuristicCache<UltTTT, UltTTTMove>,
-    > Heuristic<UltTTTMCTSGame<GC>> for UltTTTHeuristic<HC>
-{
-    type Cache = HC;
+impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
+    type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
 
     fn evaluate_state(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
-        heuristic_cache: &mut Self::Cache,
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        _heuristic_cache: &mut Self::Cache,
     ) -> f32 {
-        if let Some(cache_value) = heuristic_cache.get_intermediate_score(state) {
-            return cache_value;
-        }
-        let heuristic = match UltTTTMCTSGame::evaluate(state, game_cache) {
+        match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
             None => {
                 // meta progress: wins on status_map
@@ -354,56 +268,17 @@ impl<
 
                 final_score.clamp(0.0, 1.0)
             }
-        };
-        heuristic_cache.insert_intermediate_score(state, heuristic);
-        heuristic
+        }
     }
 
     fn evaluate_move(
-        _state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        _mv: &<UltTTTMCTSGame<GC> as MCTSGame>::Move,
-        _game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
-        _heuristic_cache: &mut Self::Cache,
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        mv: &<UltTTTMCTSGame as MCTSGame>::Move,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        heuristic_cache: &mut Self::Cache,
     ) -> f32 {
-        0.0
-    }
-}
-
-use std::cell::RefCell;
-pub struct UltTTTHeuristicCache<GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait> {
-    pub heuristic_cache: HashMap<UltTTT, f32>,
-    pub cache_usage: RefCell<usize>,
-    phantom: std::marker::PhantomData<GC>,
-}
-
-impl<GC: GameCache<UltTTT, UltTTTMove> + UltTTTGameCacheTrait> HeuristicCache<UltTTT, UltTTTMove>
-    for UltTTTHeuristicCache<GC>
-{
-    fn new() -> Self {
-        UltTTTHeuristicCache {
-            heuristic_cache: HashMap::new(),
-            cache_usage: RefCell::new(0),
-            phantom: std::marker::PhantomData,
-        }
-    }
-    fn get_intermediate_score(
-        &self,
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-    ) -> Option<f32> {
-        match self.heuristic_cache.get(state) {
-            Some(&value) => {
-                *self.cache_usage.borrow_mut() += 1;
-                Some(value)
-            }
-            None => None,
-        }
-    }
-    fn insert_intermediate_score(
-        &mut self,
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        value: f32,
-    ) {
-        self.heuristic_cache.insert(*state, value);
+        let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
+        UltTTTHeuristic::evaluate_state(&new_state, game_cache, heuristic_cache)
     }
 }
 
@@ -411,12 +286,9 @@ pub type UltTTTSimulationPolicy = HeuristicCutoff<20>;
 
 #[cfg(test)]
 mod tests {
-    type CachedUltTTTMCTSGame = UltTTTMCTSGame<UltTTTGameCache>;
-    type NoCachedUltTTTMCTSGame = UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>;
-    type PWDefaultTTT = PWDefault<CachedUltTTTMCTSGame>;
-    type ExpandAllTTT = ExpandAll<NoCachedUltTTTMCTSGame>;
-    type CachedUltTTTMCTSHeuristic = UltTTTHeuristic<UltTTTHeuristicCache<UltTTTGameCache>>;
-    type NoCachedUltTTTMCTSHeuristic = UltTTTHeuristic<NoHeuristicCache<UltTTT, UltTTTMove>>;
+    type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
+    type HPWDefaultTTT = HPWDefault<UltTTTMCTSGame>;
+    type ExpandAllTTT = ExpandAll<UltTTTMCTSGame>;
     use std::time::{Duration, Instant};
 
     use super::*;
@@ -432,23 +304,23 @@ mod tests {
         for i in 0..number_of_matches {
             eprintln!("________match {}________", i + 1);
             let mut first_mcts_ult_ttt: PlainMCTS<
-                CachedUltTTTMCTSGame,
+                UltTTTMCTSGame,
                 DynamicC,
                 CachedUTC,
                 PWDefaultTTT,
-                CachedUltTTTMCTSHeuristic,
-                UltTTTSimulationPolicy,
+                NoHeuristic,
+                DefaultSimulationPolicy,
             > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut first_ult_ttt_game_data = UltTTT::new();
             first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
             let mut first_time_out = TIME_OUT_FIRST_TURN;
             let mut second_mcts_ult_ttt: PlainMCTS<
-                NoCachedUltTTTMCTSGame,
+                UltTTTMCTSGame,
                 DynamicC,
                 CachedUTC,
-                PWDefault<NoCachedUltTTTMCTSGame>,
-                NoCachedUltTTTMCTSHeuristic,
-                UltTTTSimulationPolicy,
+                ExpandAllTTT,
+                NoHeuristic,
+                DefaultSimulationPolicy,
             > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut second_ult_ttt_game_data = UltTTT::new();
             second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
@@ -518,16 +390,6 @@ mod tests {
             }
             eprintln!("Game ended");
             eprintln!("{}", first_ult_ttt_game_data);
-            eprintln!(
-                "Game cache usage: {}, cache size: {}",
-                first_mcts_ult_ttt.game_cache.cache_usage,
-                first_mcts_ult_ttt.game_cache.tic_tac_toe_cache.len()
-            );
-            eprintln!(
-                "Heuristic cache usage: {}, cache size: {}",
-                first_mcts_ult_ttt.heuristic_cache.cache_usage.borrow(),
-                first_mcts_ult_ttt.heuristic_cache.heuristic_cache.len()
-            );
             match first_ult_ttt_game_data.status_map.get_status() {
                 TicTacToeStatus::Me => {
                     eprintln!("first winner");
