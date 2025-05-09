@@ -77,6 +77,7 @@ pub struct UltTTT {
     status_map: TicTacToeGameData,
     next_action_constraint: NextActionConstraint,
     current_player: TicTacToeStatus,
+    last_player: TicTacToeStatus,
 }
 
 impl UltTTT {
@@ -86,12 +87,14 @@ impl UltTTT {
             status_map: TicTacToeGameData::new(),
             next_action_constraint: NextActionConstraint::Init,
             current_player: TicTacToeStatus::Me,
+            last_player: TicTacToeStatus::Me,
         }
     }
     pub fn set_current_player(&mut self, player: TicTacToeStatus) {
         self.current_player = player;
     }
     pub fn next_player(&mut self) {
+        self.last_player = self.current_player;
         self.current_player = self.current_player.next();
     }
     fn get_cell_value(&self, cell: UltTTTMove) -> TicTacToeStatus {
@@ -187,8 +190,10 @@ impl MCTSGame for UltTTTMCTSGame {
             .map
             .get_cell_mut(mv.status_index)
             .set_cell_value(mv.mini_board_index, state.current_player);
-        let status = 
-            new_state.map.get_cell(mv.status_index).get_status_increment(&mv.mini_board_index);
+        let status = new_state
+            .map
+            .get_cell(mv.status_index)
+            .get_status_increment(&mv.mini_board_index);
         if !status.is_vacant() {
             new_state.status_map.set_cell_value(mv.status_index, status);
         }
@@ -227,6 +232,9 @@ impl MCTSGame for UltTTTMCTSGame {
     fn current_player(state: &Self::State) -> TicTacToeStatus {
         state.current_player
     }
+    fn last_player(state: &Self::State) -> Self::Player {
+        state.last_player
+    }
     fn perspective_player() -> Self::Player {
         TicTacToeStatus::Me
     }
@@ -241,8 +249,13 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
         state: &<UltTTTMCTSGame as MCTSGame>::State,
         game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
         _heuristic_cache: &mut Self::Cache,
+        perspective_player: Option<<UltTTTMCTSGame as MCTSGame>::Player>,
     ) -> f32 {
-        match UltTTTMCTSGame::evaluate(state, game_cache) {
+        let player = match perspective_player {
+            Some(player) => player,
+            None => state.last_player,
+        };
+        let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
             None => {
                 // meta progress: wins on status_map
@@ -253,21 +266,31 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
                 let mut opp_threats = 0.0;
                 for (status_index, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant())
                 {
+                    let cell_weight = status_index.cell_weight();
+                    let (my_meta_factor, opp_meta_factor) =
+                        state.status_map.get_meta_cell_factors(status_index);
                     let (my, opp) = state.map.get_cell(status_index).get_threats();
-                    my_threats += my as f32;
-                    opp_threats += opp as f32;
+                    my_threats += my_meta_factor * cell_weight * my as f32;
+                    opp_threats += opp_meta_factor * cell_weight * opp as f32;
                 }
                 // calculate heuristic value
                 let progress = state.status_map.count_non_vacant_cells() as f32 / 9.0;
                 let meta_weight = 0.3 + 0.4 * progress;
                 let threat_weight = 1.0 - meta_weight;
+                let max_threat_score = 1.0_f32.max(my_threats + opp_threats);
 
                 let final_score = 0.5
                     + meta_weight * (my_wins - opp_wins) / 9.0
-                    + threat_weight * (my_threats - opp_threats) / 20.0;
+                    + threat_weight * (my_threats - opp_threats) / max_threat_score;
 
                 final_score.clamp(0.0, 1.0)
             }
+        };
+
+        match player {
+            TicTacToeStatus::Me => score,
+            TicTacToeStatus::Opp => 1.0 - score,
+            _ => unreachable!("Player is alway Me or Opp"),
         }
     }
 
@@ -278,7 +301,7 @@ impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
         heuristic_cache: &mut Self::Cache,
     ) -> f32 {
         let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
-        UltTTTHeuristic::evaluate_state(&new_state, game_cache, heuristic_cache)
+        UltTTTHeuristic::evaluate_state(&new_state, game_cache, heuristic_cache, None)
     }
 }
 
@@ -307,9 +330,9 @@ mod tests {
                 UltTTTMCTSGame,
                 DynamicC,
                 CachedUTC,
-                PWDefaultTTT,
-                NoHeuristic,
-                DefaultSimulationPolicy,
+                HPWDefaultTTT,
+                UltTTTHeuristic,
+                UltTTTSimulationPolicy,
             > = PlainMCTS::new(WEIGHTING_FACTOR);
             let mut first_ult_ttt_game_data = UltTTT::new();
             first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);

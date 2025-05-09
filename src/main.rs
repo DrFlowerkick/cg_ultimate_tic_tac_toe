@@ -6,11 +6,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::{
-    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTMove,
-    UltTTTSimulationPolicy,
+    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTMove, UltTTTSimulationPolicy,
 };
 
-type PWDefaultTTT = PWDefault<UltTTTMCTSGame>;
+type HPWDefaultTTT = HPWDefault<UltTTTMCTSGame>;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -36,7 +35,7 @@ fn main() {
         UltTTTMCTSGame,
         DynamicC,
         CachedUTC,
-        PWDefaultTTT,
+        HPWDefaultTTT,
         UltTTTHeuristic,
         UltTTTSimulationPolicy,
     > = PlainMCTS::new(weighting_factor);
