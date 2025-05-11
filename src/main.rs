@@ -6,10 +6,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::{
-    UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTMove, UltTTTSimulationPolicy,
+    HPWDefaultTTTNoGameCache, UltTTT, UltTTTHeuristic, UltTTTMCTSGame, UltTTTMCTSGameNoGameCache,
+    UltTTTMove, UltTTTSimulationPolicy,
 };
-
-type HPWDefaultTTT = HPWDefault<UltTTTMCTSGame>;
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -26,19 +25,23 @@ macro_rules! parse_input {
 // To debug: eprintln!("Debug message...");
 
 fn main() {
-    let weighting_factor = 1.4;
+    let exploitation_constant = 1.4;
+    // recursive heuristic is too expansive regarding calculation time
+    let depth_first_turn = 0;
+    let depth_successive_turns = 0;
+    let alpha = 0.7;
     let time_out_first_turn = Duration::from_millis(990);
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGame,
+        UltTTTMCTSGameNoGameCache,
         DynamicC,
         CachedUTC,
-        HPWDefaultTTT,
+        HPWDefaultTTTNoGameCache,
         UltTTTHeuristic,
         UltTTTSimulationPolicy,
-    > = PlainMCTS::new(weighting_factor);
+    > = PlainMCTS::new(exploitation_constant, depth_first_turn, alpha);
 
     // start parallel thread for input of codingame
     let (tx, rx) = mpsc::channel();
@@ -96,6 +99,7 @@ fn main() {
         eprintln!("Iterations: {}", number_of_iterations);
         // set timeout for all following turns
         time_out = time_out_successive_turns;
+        mcts_ult_ttt.set_depth(depth_successive_turns);
 
         // select my move and send it to codingame
         let selected_move = *mcts_ult_ttt.select_move();
