@@ -320,6 +320,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         heuristic_cache: &mut Self::Cache,
         perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
     ) -> f32 {
+        const CONSTRAINT_FACTOR: f32 = 1.5;
         if let Some(score) = heuristic_cache.get_intermediate_score(state) {
             return score;
         }
@@ -335,13 +336,33 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 let mut opp_threat_sum = 0.0;
                 for (status_index, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant())
                 {
+                    let constraint_factor = match state.next_action_constraint {
+                        NextActionConstraint::MiniBoard(next_board) => {
+                            if status_index == next_board {
+                                CONSTRAINT_FACTOR
+                            } else {
+                                1.0
+                            }
+                        }
+                        NextActionConstraint::None => 1.5,
+                        NextActionConstraint::Init => {
+                            unreachable!("Init is reserved for initial tree root node.")
+                        }
+                    };
+                    let (my_constraint_factor, opp_constraint_factor) = match state.current_player {
+                        TicTacToeStatus::Me => (constraint_factor, 1.0),
+                        TicTacToeStatus::Opp => (1.0, constraint_factor),
+                        _ => unreachable!("Only Me and Opp are allowed for player."),
+                    };
                     let cell_weight = status_index.cell_weight();
                     let (my_meta_factor, opp_meta_factor) =
                         game_cache.get_meta_cell_factors(&state.status_map, status_index);
                     let (my_threats, opp_threats) =
                         game_cache.get_board_threats(state.map.get_cell(status_index));
-                    my_threat_sum += my_meta_factor * cell_weight * my_threats;
-                    opp_threat_sum += opp_meta_factor * cell_weight * opp_threats;
+                    my_threat_sum +=
+                        my_constraint_factor * my_meta_factor * cell_weight * my_threats;
+                    opp_threat_sum +=
+                        opp_constraint_factor * opp_meta_factor * cell_weight * opp_threats;
                 }
                 let progress = (my_wins + opp_wins) / 9.0;
                 let meta_weight = 0.3 + 0.4 * progress;
@@ -651,7 +672,8 @@ where
             path.push(best_child_index);
             current_index = best_child_index;
         }
-        let current_index = if self.nodes[current_index].get_visits() == 0
+        let current_index = if (self.nodes[current_index].get_visits() == 0
+            && current_index != self.root_index)
             || G::evaluate(self.nodes[current_index].get_state(), &mut self.game_cache).is_some()
         {
             current_index
