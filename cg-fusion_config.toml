@@ -51,18 +51,17 @@
 [impl_items]
 include = [
     "add_child@impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
-    "allowed_children",
     "cell_weight",
     "count_me_cells",
     "count_opp_cells",
     "evaluate@impl TicTacToeStatus",
     "execute_action",
     "expandable_moves@impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
-    "expandable_moves@impl<constC:usize,constAN:usize,constAD:usize,G:MCTSGame> BaseProgressiveWidening<C,AN,AD,G>",
+    "expandable_moves@impl<G:MCTSGame> BaseProgressiveWidening<G>",
     "get_cell",
     "get_cell_mut",
     "get_children",
-    "get_meta_cell_factors@impl TicTacToeGameData",
+    "get_meta_cell_threats@impl TicTacToeGameData",
     "get_status@impl TicTacToeGameData",
     "get_threats",
     "is_not_vacant",
@@ -79,8 +78,7 @@ include = [
     "set_cell",
     "set_cell_value",
     "set_current_player@impl UltTTT",
-    "set_depth",
-    "should_expand@impl<constC:usize,constAN:usize,constAD:usize,G:MCTSGame> BaseProgressiveWidening<C,AN,AD,G>"
+    "should_expand@impl<G:MCTSGame> BaseProgressiveWidening<G>"
 ]
 exclude = [
     "get_cell_value@impl UltTTT"
@@ -88,9 +86,14 @@ exclude = [
 [impl_blocks]
 include = [
     "impl CellIndex3x3",
+    "impl Default for BaseHeuristicConfig",
     "impl From<CellIndex3x3> for (u8,u8)",
     "impl From<CellIndex3x3> for usize",
     "impl From<UltTTTMove> for (u8,u8)",
+    "impl HeuristicConfig for BaseHeuristicConfig",
+    "impl HeuristicConfig for UltTTTHeuristicConfig",
+    "impl MCTSConfig for BaseConfig",
+    "impl MCTSConfig for UltTTTMCTSConfig",
     "impl MCTSPlayer for TicTacToeStatus",
     "impl TicTacToeGameData",
     "impl TicTacToeStatus",
@@ -102,17 +105,18 @@ include = [
     "impl<G,UP,UC,EP,H,SP> PlainMCTS<G,UP,UC,EP,H,SP> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,SP:SimulationPolicy<G,H>,",
     "impl<G,UP,UC,EP,H> MCTSNode<G> for PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
     "impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
+    "impl<G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for HeuristicProgressiveWidening<G>",
+    "impl<G:MCTSGame,H:Heuristic<G>> SimulationPolicy<G,H> for HeuristicCutoff",
     "impl<G:MCTSGame,UP:UCTPolicy<G>> UTCCache<G,UP> for CachedUTC",
+    "impl<G:MCTSGame> BaseProgressiveWidening<G>",
     "impl<G:MCTSGame> Heuristic<G> for NoHeuristic",
     "impl<G:MCTSGame> UCTPolicy<G> for DynamicC",
     "impl<GC:UltTTTGameCacheTrait+GameCache<UltTTT,UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>> for UltTTTHeuristic",
     "impl<State,Move> GameCache<State,Move> for NoGameCache<State,Move>",
-    "impl<State,Move> HeuristicCache<State,Move> for NoHeuristicCache<State,Move>",
-    "impl<constC:usize,constAN:usize,constAD:usize,G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for HeuristicProgressiveWidening<C,AN,AD,G>",
-    "impl<constC:usize,constAN:usize,constAD:usize,G:MCTSGame> BaseProgressiveWidening<C,AN,AD,G>",
-    "impl<constMXD:usize,G:MCTSGame,H:Heuristic<G>> SimulationPolicy<G,H> for HeuristicCutoff<MXD>"
+    "impl<State,Move> HeuristicCache<State,Move> for NoHeuristicCache<State,Move>"
 ]
 exclude = [
+    "impl Default for BaseConfig",
     "impl Display for CellIndex3x3",
     "impl Display for UltTTT",
     "impl GameCache<TicTacToeGame,TicTacToePlayerAction> for TicTacToeGameCache",
@@ -124,8 +128,8 @@ exclude = [
     "impl std::fmt::Display for TicTacToeGameData",
     "impl std::fmt::Display for TicTacToeStatus",
     "impl<G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for ExpandAll<G>",
+    "impl<G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for ProgressiveWidening<G>",
     "impl<G:MCTSGame,H:Heuristic<G>> SimulationPolicy<G,H> for DefaultSimulationPolicy",
     "impl<G:MCTSGame,UP:UCTPolicy<G>> UTCCache<G,UP> for NoUTCCache",
-    "impl<G:MCTSGame> UCTPolicy<G> for StaticC",
-    "impl<constC:usize,constAN:usize,constAD:usize,G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for ProgressiveWidening<C,AN,AD,G>"
+    "impl<G:MCTSGame> UCTPolicy<G> for StaticC"
 ]

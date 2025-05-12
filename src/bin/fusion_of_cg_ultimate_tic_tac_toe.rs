@@ -9,10 +9,6 @@ macro_rules! parse_input {
     };
 }
 fn main() {
-    let exploitation_constant = 1.4;
-    let depth_first_turn = 0;
-    let depth_successive_turns = 0;
-    let alpha = 0.7;
     let time_out_first_turn = Duration::from_millis(990);
     let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
@@ -23,8 +19,11 @@ fn main() {
         CachedUTC,
         HPWDefaultTTTNoGameCache,
         UltTTTHeuristic,
-        UltTTTSimulationPolicy,
-    > = PlainMCTS::new(exploitation_constant, depth_first_turn, alpha);
+        HeuristicCutoff,
+    > = PlainMCTS::new(
+        UltTTTMCTSConfig::default(),
+        UltTTTHeuristicConfig::default(),
+    );
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || loop {
         let mut input_line = String::new();
@@ -67,7 +66,6 @@ fn main() {
         }
         eprintln!("Iterations: {}", number_of_iterations);
         time_out = time_out_successive_turns;
-        mcts_ult_ttt.set_depth(depth_successive_turns);
         let selected_move = *mcts_ult_ttt.select_move();
         game_data =
             UltTTTMCTSGame::apply_move(&game_data, &selected_move, &mut mcts_ult_ttt.game_cache);
@@ -186,7 +184,36 @@ impl UltTTT {
     }
 }
 type UltTTTMCTSGameNoGameCache = UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>;
-type HPWDefaultTTTNoGameCache = HPWDefault<UltTTTMCTSGameNoGameCache>;
+type HPWDefaultTTTNoGameCache = HeuristicProgressiveWidening<UltTTTMCTSGameNoGameCache>;
+struct UltTTTMCTSConfig {
+    base_config: BaseConfig,
+}
+impl Default for UltTTTMCTSConfig {
+    fn default() -> Self {
+        UltTTTMCTSConfig {
+            base_config: BaseConfig {
+                exploration_constant: 1.4,
+                progressive_widening_constant: 2.0,
+                progressive_widening_exponent: 0.5,
+                early_cut_off_depth: 30,
+            },
+        }
+    }
+}
+impl MCTSConfig for UltTTTMCTSConfig {
+    fn exploration_constant(&self) -> f32 {
+        self.base_config.exploration_constant
+    }
+    fn progressive_widening_constant(&self) -> f32 {
+        self.base_config.progressive_widening_constant
+    }
+    fn progressive_widening_exponent(&self) -> f32 {
+        self.base_config.progressive_widening_exponent
+    }
+    fn early_cut_off_depth(&self) -> usize {
+        self.base_config.early_cut_off_depth
+    }
+}
 struct UltTTTMCTSGame<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> {
     phantom: std::marker::PhantomData<GC>,
 }
@@ -195,6 +222,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> MCTSGame for UltT
     type Move = UltTTTMove;
     type Player = TicTacToeStatus;
     type Cache = GC;
+    type Config = UltTTTMCTSConfig;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
         match state.next_action_constraint {
             NextActionConstraint::Init => Box::new(
@@ -282,11 +310,11 @@ trait UltTTTGameCacheTrait {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
     fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (f32, f32);
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (f32, f32);
-    fn get_meta_cell_factors(
+    fn get_meta_cell_threats(
         &mut self,
         board: &TicTacToeGameData,
         index: CellIndex3x3,
-    ) -> (f32, f32);
+    ) -> (i8, i8, i8, i8);
 }
 impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
@@ -301,12 +329,57 @@ impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
         let (my_threats, opp_threats) = board.get_threats();
         (my_threats as f32, opp_threats as f32)
     }
-    fn get_meta_cell_factors(
+    fn get_meta_cell_threats(
         &mut self,
         board: &TicTacToeGameData,
         index: CellIndex3x3,
-    ) -> (f32, f32) {
-        board.get_meta_cell_factors(index)
+    ) -> (i8, i8, i8, i8) {
+        board.get_meta_cell_threats(index)
+    }
+}
+struct UltTTTHeuristicConfig {
+    base_config: BaseHeuristicConfig,
+    meta_weight_base: f32,
+    meta_weight_progress_offset: f32,
+    meta_cell_big_threat: f32,
+    meta_cell_small_threat: f32,
+    constraint_factor: f32,
+    free_choice_constraint_factor: f32,
+    evaluate_state_recursive_alpha_reduction_factor: f32,
+    evaluate_state_recursive_early_exit_threshold: f32,
+}
+impl HeuristicConfig for UltTTTHeuristicConfig {
+    fn early_cut_off_lower_bound(&self) -> f32 {
+        self.base_config.early_cut_off_lower_bound
+    }
+    fn early_cut_off_upper_bound(&self) -> f32 {
+        self.base_config.early_cut_off_upper_bound
+    }
+    fn evaluate_state_recursive_depth(&self) -> usize {
+        self.base_config.evaluate_state_recursive_depth
+    }
+    fn evaluate_state_recursive_alpha(&self) -> f32 {
+        self.base_config.evaluate_state_recursive_alpha
+    }
+}
+impl Default for UltTTTHeuristicConfig {
+    fn default() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                early_cut_off_lower_bound: 0.05,
+                early_cut_off_upper_bound: 0.95,
+                evaluate_state_recursive_depth: 0,
+                evaluate_state_recursive_alpha: 0.7,
+            },
+            meta_weight_base: 0.3,
+            meta_weight_progress_offset: 0.4,
+            meta_cell_big_threat: 3.0,
+            meta_cell_small_threat: 1.5,
+            constraint_factor: 1.5,
+            free_choice_constraint_factor: 1.5,
+            evaluate_state_recursive_alpha_reduction_factor: 0.9,
+            evaluate_state_recursive_early_exit_threshold: 0.95,
+        }
     }
 }
 struct UltTTTHeuristic {}
@@ -314,13 +387,14 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
     for UltTTTHeuristic
 {
     type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
+    type Config = UltTTTHeuristicConfig;
     fn evaluate_state(
         state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
         game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
         heuristic_cache: &mut Self::Cache,
         perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
+        heuristic_config: &Self::Config,
     ) -> f32 {
-        const CONSTRAINT_FACTOR: f32 = 1.5;
         if let Some(score) = heuristic_cache.get_intermediate_score(state) {
             return score;
         }
@@ -339,12 +413,14 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                     let constraint_factor = match state.next_action_constraint {
                         NextActionConstraint::MiniBoard(next_board) => {
                             if status_index == next_board {
-                                CONSTRAINT_FACTOR
+                                heuristic_config.constraint_factor
                             } else {
                                 1.0
                             }
                         }
-                        NextActionConstraint::None => 1.5,
+                        NextActionConstraint::None => {
+                            heuristic_config.free_choice_constraint_factor
+                        }
                         NextActionConstraint::Init => {
                             unreachable!("Init is reserved for initial tree root node.")
                         }
@@ -355,8 +431,18 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                         _ => unreachable!("Only Me and Opp are allowed for player."),
                     };
                     let cell_weight = status_index.cell_weight();
-                    let (my_meta_factor, opp_meta_factor) =
-                        game_cache.get_meta_cell_factors(&state.status_map, status_index);
+                    let (
+                        my_meta_threats,
+                        my_meta_small_threats,
+                        opp_meta_threats,
+                        opp_meta_small_threats,
+                    ) = game_cache.get_meta_cell_threats(&state.status_map, status_index);
+                    let my_meta_factor = heuristic_config.meta_cell_big_threat
+                        * my_meta_threats as f32
+                        + heuristic_config.meta_cell_small_threat * my_meta_small_threats as f32;
+                    let opp_meta_factor = heuristic_config.meta_cell_big_threat
+                        * opp_meta_threats as f32
+                        + heuristic_config.meta_cell_small_threat * opp_meta_small_threats as f32;
                     let (my_threats, opp_threats) =
                         game_cache.get_board_threats(state.map.get_cell(status_index));
                     my_threat_sum +=
@@ -365,7 +451,8 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                         opp_constraint_factor * opp_meta_factor * cell_weight * opp_threats;
                 }
                 let progress = (my_wins + opp_wins) / 9.0;
-                let meta_weight = 0.3 + 0.4 * progress;
+                let meta_weight = heuristic_config.meta_weight_base
+                    + heuristic_config.meta_weight_progress_offset * progress;
                 let threat_weight = 1.0 - meta_weight;
                 let max_threat_score = 1.0_f32.max(my_threat_sum + opp_threat_sum);
                 let final_score = 0.5
@@ -386,57 +473,37 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
         game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
         heuristic_cache: &mut Self::Cache,
+        heuristic_config: &Self::Config,
         depth: usize,
         alpha: f32,
     ) -> f32 {
-        let base_heuristic = Self::evaluate_state(state, game_cache, heuristic_cache, None);
+        let base_heuristic =
+            Self::evaluate_state(state, game_cache, heuristic_cache, None, heuristic_config);
         if depth == 0 || UltTTTMCTSGame::evaluate(state, game_cache).is_some() {
             return base_heuristic;
         }
-        let worst_response = match state.next_action_constraint {
-            NextActionConstraint::Init => unreachable!("Init is not available."),
-            NextActionConstraint::None => {
-                if (0_usize..9)
-                    .map(|i| {
-                        game_cache.get_meta_cell_factors(
-                            &state.status_map,
-                            CellIndex3x3::try_from(i).unwrap(),
-                        )
-                    })
-                    .any(|(ms, os)| match state.last_player {
-                        TicTacToeStatus::Me => os > 3.0,
-                        TicTacToeStatus::Opp => ms > 3.0,
-                        _ => false,
-                    })
+        let mut worst_response = f32::NEG_INFINITY;
+        let next_player_alpha = alpha
+            - (alpha - 0.5) * heuristic_config.evaluate_state_recursive_alpha_reduction_factor;
+        for next_player_move in UltTTTMCTSGame::<GC>::available_moves(state) {
+            let next_player_state =
+                UltTTTMCTSGame::apply_move(state, &next_player_move, game_cache);
+            let response_value = Self::evaluate_state_recursive(
+                &next_player_state,
+                game_cache,
+                heuristic_cache,
+                heuristic_config,
+                depth - 1,
+                next_player_alpha,
+            );
+            if response_value > worst_response {
+                worst_response = response_value;
+                if worst_response >= heuristic_config.evaluate_state_recursive_early_exit_threshold
                 {
-                    0.95
-                } else {
-                    0.85
+                    break;
                 }
             }
-            NextActionConstraint::MiniBoard(_) => {
-                let mut worst_response = f32::NEG_INFINITY;
-                let next_player_alpha = alpha - (alpha - 0.5) * 0.9;
-                for next_player_move in UltTTTMCTSGame::<GC>::available_moves(state) {
-                    let next_player_state =
-                        UltTTTMCTSGame::apply_move(state, &next_player_move, game_cache);
-                    let response_value = Self::evaluate_state_recursive(
-                        &next_player_state,
-                        game_cache,
-                        heuristic_cache,
-                        depth - 1,
-                        next_player_alpha,
-                    );
-                    if response_value > worst_response {
-                        worst_response = response_value;
-                        if worst_response >= 1.0 {
-                            break;
-                        }
-                    }
-                }
-                worst_response
-            }
-        };
+        }
         alpha * base_heuristic + (1.0 - alpha) * (1.0 - worst_response)
     }
     fn evaluate_move(
@@ -444,20 +511,19 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         mv: &<UltTTTMCTSGame<GC> as MCTSGame>::Move,
         game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
         heuristic_cache: &mut Self::Cache,
-        depth: usize,
-        alpha: f32,
+        heuristic_config: &Self::Config,
     ) -> f32 {
         let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
         UltTTTHeuristic::evaluate_state_recursive(
             &new_state,
             game_cache,
             heuristic_cache,
-            depth,
-            alpha,
+            heuristic_config,
+            heuristic_config.evaluate_state_recursive_depth(),
+            heuristic_config.evaluate_state_recursive_alpha(),
         )
     }
 }
-type UltTTTSimulationPolicy = HeuristicCutoff<30>;
 use std::convert::TryFrom;
 #[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
@@ -577,9 +643,8 @@ where
 {
     nodes: Vec<PlainNode<G, UP, UC, EP, H>>,
     root_index: usize,
-    exploration_constant: f32,
-    depth: usize,
-    alpha: f32,
+    mcts_config: G::Config,
+    heuristic_config: H::Config,
     game_cache: G::Cache,
     heuristic_cache: H::Cache,
     phantom: std::marker::PhantomData<SP>,
@@ -593,20 +658,16 @@ where
     H: Heuristic<G>,
     SP: SimulationPolicy<G, H>,
 {
-    fn new(exploration_constant: f32, depth: usize, alpha: f32) -> Self {
+    fn new(mcts_config: G::Config, heuristic_config: H::Config) -> Self {
         Self {
             nodes: vec![],
             root_index: 0,
-            exploration_constant,
-            depth,
-            alpha,
+            mcts_config,
+            heuristic_config,
             game_cache: G::Cache::new(),
             heuristic_cache: H::Cache::new(),
             phantom: std::marker::PhantomData,
         }
-    }
-    fn set_depth(&mut self, depth: usize) {
-        self.depth = depth;
     }
 }
 impl<G, UP, UC, EP, H, SP> MCTSAlgo<G> for PlainMCTS<G, UP, UC, EP, H, SP>
@@ -635,8 +696,7 @@ where
             state,
             &mut self.game_cache,
             &mut self.heuristic_cache,
-            self.depth,
-            self.alpha,
+            &self.heuristic_config,
         );
         self.nodes
             .push(PlainNode::root_node(state.clone(), expansion_policy));
@@ -649,10 +709,11 @@ where
         while !self.nodes[current_index].get_children().is_empty() {
             let parent_visits = self.nodes[current_index].get_visits();
             let num_parent_children = self.nodes[current_index].get_children().len();
-            if self.nodes[current_index]
-                .expansion_policy
-                .should_expand(parent_visits, num_parent_children)
-            {
+            if self.nodes[current_index].expansion_policy.should_expand(
+                parent_visits,
+                num_parent_children,
+                &self.mcts_config,
+            ) {
                 break;
             }
             let mut best_child_index = 0;
@@ -661,8 +722,8 @@ where
                 let child_index = self.nodes[current_index].get_children()[vec_index];
                 let utc = self.nodes[child_index].calc_utc(
                     parent_visits,
-                    self.exploration_constant,
                     G::perspective_player(),
+                    &self.mcts_config,
                 );
                 if utc > best_utc {
                     best_utc = utc;
@@ -679,7 +740,7 @@ where
             current_index
         } else {
             let num_parent_children = self.nodes[current_index].get_children().len();
-            let expandable_moves = self.nodes[current_index].expandable_moves();
+            let expandable_moves = self.nodes[current_index].expandable_moves(&self.mcts_config);
             for mv in expandable_moves {
                 let new_state =
                     G::apply_move(&self.nodes[current_index].state, &mv, &mut self.game_cache);
@@ -687,8 +748,7 @@ where
                     &new_state,
                     &mut self.game_cache,
                     &mut self.heuristic_cache,
-                    self.depth,
-                    self.alpha,
+                    &self.heuristic_config,
                 );
                 let new_node = PlainNode::new(new_state, mv, expansion_policy);
                 self.nodes.push(new_node);
@@ -714,6 +774,8 @@ where
                 &mut self.game_cache,
                 &mut self.heuristic_cache,
                 Some(G::perspective_player()),
+                &self.mcts_config,
+                &self.heuristic_config,
             ) {
                 break heuristic;
             }
@@ -742,6 +804,26 @@ where
     }
 }
 use rand::prelude::SliceRandom;
+struct BaseConfig {
+    exploration_constant: f32,
+    progressive_widening_constant: f32,
+    progressive_widening_exponent: f32,
+    early_cut_off_depth: usize,
+}
+impl MCTSConfig for BaseConfig {
+    fn exploration_constant(&self) -> f32 {
+        self.exploration_constant
+    }
+    fn progressive_widening_constant(&self) -> f32 {
+        self.progressive_widening_constant
+    }
+    fn progressive_widening_exponent(&self) -> f32 {
+        self.progressive_widening_exponent
+    }
+    fn early_cut_off_depth(&self) -> usize {
+        self.early_cut_off_depth
+    }
+}
 struct NoGameCache<State, Move> {
     phantom: std::marker::PhantomData<(State, Move)>,
 }
@@ -754,8 +836,8 @@ impl<State, Move> GameCache<State, Move> for NoGameCache<State, Move> {
 }
 struct DynamicC {}
 impl<G: MCTSGame> UCTPolicy<G> for DynamicC {
-    fn exploration_score(visits: usize, parent_visits: usize, c: f32) -> f32 {
-        let dynamic_c = c / (1.0 + (visits as f32).sqrt());
+    fn exploration_score(visits: usize, parent_visits: usize, mcts_config: &G::Config) -> f32 {
+        let dynamic_c = mcts_config.exploration_constant() / (1.0 + (visits as f32).sqrt());
         dynamic_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
@@ -785,39 +867,46 @@ impl<G: MCTSGame, UP: UCTPolicy<G>> UTCCache<G, UP> for CachedUTC {
     fn get_exploitation(&self, _v: usize, _a: f32, _c: G::Player, _p: G::Player) -> f32 {
         self.exploitation
     }
-    fn update_exploration(&mut self, visits: usize, parent_visits: usize, base_c: f32) {
+    fn update_exploration(&mut self, visits: usize, parent_visits: usize, mcts_config: &G::Config) {
         if self.last_parent_visits != parent_visits {
-            self.exploration = UP::exploration_score(visits, parent_visits, base_c);
+            self.exploration = UP::exploration_score(visits, parent_visits, mcts_config);
             self.last_parent_visits = parent_visits;
         }
     }
-    fn get_exploration(&self, _v: usize, _p: usize, _b: f32) -> f32 {
+    fn get_exploration(&self, _v: usize, _p: usize, _mc: &G::Config) -> f32 {
         self.exploration
     }
 }
-struct BaseProgressiveWidening<const C: usize, const AN: usize, const AD: usize, G: MCTSGame> {
+struct BaseProgressiveWidening<G: MCTSGame> {
     unexpanded_moves: Vec<G::Move>,
 }
-impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame>
-    BaseProgressiveWidening<C, AN, AD, G>
-{
-    fn allowed_children(visits: usize) -> usize {
+impl<G: MCTSGame> BaseProgressiveWidening<G> {
+    fn allowed_children(visits: usize, mcts_config: &G::Config) -> usize {
         if visits == 0 {
             1
         } else {
-            (C as f32 * (visits as f32).powf(AN as f32 / AD as f32)).floor() as usize
+            (mcts_config.progressive_widening_constant()
+                * (visits as f32).powf(mcts_config.progressive_widening_exponent()))
+            .floor() as usize
         }
     }
-    fn should_expand(&self, visits: usize, num_parent_children: usize) -> bool {
-        num_parent_children < Self::allowed_children(visits) && !self.unexpanded_moves.is_empty()
+    fn should_expand(
+        &self,
+        visits: usize,
+        num_parent_children: usize,
+        mcts_config: &G::Config,
+    ) -> bool {
+        num_parent_children < Self::allowed_children(visits, mcts_config)
+            && !self.unexpanded_moves.is_empty()
     }
     fn expandable_moves(
         &mut self,
         visits: usize,
         num_parent_children: usize,
         _state: &<G as MCTSGame>::State,
+        mcts_config: &G::Config,
     ) -> Box<dyn Iterator<Item = <G as MCTSGame>::Move> + '_> {
-        let allowed_children = Self::allowed_children(visits);
+        let allowed_children = Self::allowed_children(visits, mcts_config);
         if allowed_children > num_parent_children && !self.unexpanded_moves.is_empty() {
             let num_expandable_moves = self
                 .unexpanded_moves
@@ -829,19 +918,13 @@ impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame>
         }
     }
 }
-struct HeuristicProgressiveWidening<const C: usize, const AN: usize, const AD: usize, G: MCTSGame>(
-    BaseProgressiveWidening<C, AN, AD, G>,
-);
-type HPWDefault<G> = HeuristicProgressiveWidening<2, 1, 2, G>;
-impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame, H: Heuristic<G>>
-    ExpansionPolicy<G, H> for HeuristicProgressiveWidening<C, AN, AD, G>
-{
+struct HeuristicProgressiveWidening<G: MCTSGame>(BaseProgressiveWidening<G>);
+impl<G: MCTSGame, H: Heuristic<G>> ExpansionPolicy<G, H> for HeuristicProgressiveWidening<G> {
     fn new(
         state: &<G as MCTSGame>::State,
         game_cache: &mut <G as MCTSGame>::Cache,
         heuristic_cache: &mut <H as Heuristic<G>>::Cache,
-        depth: usize,
-        alpha: f32,
+        heuristic_config: &<H as Heuristic<G>>::Config,
     ) -> Self {
         let is_terminal = match game_cache.get_terminal_value(state) {
             Some(status) => status.is_some(),
@@ -858,36 +941,52 @@ impl<const C: usize, const AN: usize, const AD: usize, G: MCTSGame, H: Heuristic
             unexpanded_moves,
             game_cache,
             heuristic_cache,
-            depth,
-            alpha,
+            heuristic_config,
         );
         HeuristicProgressiveWidening(BaseProgressiveWidening { unexpanded_moves })
     }
-    fn should_expand(&self, visits: usize, num_parent_children: usize) -> bool {
-        self.0.should_expand(visits, num_parent_children)
+    fn should_expand(
+        &self,
+        visits: usize,
+        num_parent_children: usize,
+        mcts_config: &G::Config,
+    ) -> bool {
+        self.0
+            .should_expand(visits, num_parent_children, mcts_config)
     }
     fn expandable_moves(
         &mut self,
         visits: usize,
         num_parent_children: usize,
         state: &<G as MCTSGame>::State,
+        mcts_config: &G::Config,
     ) -> Box<dyn Iterator<Item = <G as MCTSGame>::Move> + '_> {
-        self.0.expandable_moves(visits, num_parent_children, state)
+        self.0
+            .expandable_moves(visits, num_parent_children, state, mcts_config)
     }
 }
-struct HeuristicCutoff<const MXD: usize> {}
-impl<const MXD: usize, G: MCTSGame, H: Heuristic<G>> SimulationPolicy<G, H>
-    for HeuristicCutoff<MXD>
-{
+struct HeuristicCutoff {}
+impl<G: MCTSGame, H: Heuristic<G>> SimulationPolicy<G, H> for HeuristicCutoff {
     fn should_cutoff(
         state: &G::State,
         depth: usize,
         game_cache: &mut G::Cache,
         heuristic_cache: &mut H::Cache,
         perspective_player: Option<G::Player>,
+        mcts_config: &G::Config,
+        heuristic_config: &H::Config,
     ) -> Option<f32> {
-        let heuristic = H::evaluate_state(state, game_cache, heuristic_cache, perspective_player);
-        if depth >= MXD || heuristic <= 0.05 || heuristic >= 0.95 {
+        let heuristic = H::evaluate_state(
+            state,
+            game_cache,
+            heuristic_cache,
+            perspective_player,
+            heuristic_config,
+        );
+        if depth >= mcts_config.early_cut_off_depth()
+            || heuristic <= heuristic_config.early_cut_off_lower_bound()
+            || heuristic >= heuristic_config.early_cut_off_upper_bound()
+        {
             Some(heuristic)
         } else {
             None
@@ -904,14 +1003,46 @@ impl<State, Move> HeuristicCache<State, Move> for NoHeuristicCache<State, Move> 
         }
     }
 }
+struct BaseHeuristicConfig {
+    early_cut_off_lower_bound: f32,
+    early_cut_off_upper_bound: f32,
+    evaluate_state_recursive_depth: usize,
+    evaluate_state_recursive_alpha: f32,
+}
+impl Default for BaseHeuristicConfig {
+    fn default() -> Self {
+        BaseHeuristicConfig {
+            early_cut_off_lower_bound: 0.05,
+            early_cut_off_upper_bound: 0.95,
+            evaluate_state_recursive_depth: 0,
+            evaluate_state_recursive_alpha: 0.7,
+        }
+    }
+}
+impl HeuristicConfig for BaseHeuristicConfig {
+    fn early_cut_off_lower_bound(&self) -> f32 {
+        self.early_cut_off_lower_bound
+    }
+    fn early_cut_off_upper_bound(&self) -> f32 {
+        self.early_cut_off_upper_bound
+    }
+    fn evaluate_state_recursive_depth(&self) -> usize {
+        self.evaluate_state_recursive_depth
+    }
+    fn evaluate_state_recursive_alpha(&self) -> f32 {
+        self.evaluate_state_recursive_alpha
+    }
+}
 struct NoHeuristic {}
 impl<G: MCTSGame> Heuristic<G> for NoHeuristic {
     type Cache = NoHeuristicCache<G::State, G::Move>;
+    type Config = BaseHeuristicConfig;
     fn evaluate_state(
         state: &<G as MCTSGame>::State,
         game_cache: &mut <G as MCTSGame>::Cache,
         _heuristic_cache: &mut Self::Cache,
         _perspective_player: Option<G::Player>,
+        _heuristic_config: &Self::Config,
     ) -> f32 {
         G::evaluate(state, game_cache).unwrap_or(0.5)
     }
@@ -920,8 +1051,7 @@ impl<G: MCTSGame> Heuristic<G> for NoHeuristic {
         _mv: &<G as MCTSGame>::Move,
         _game_cache: &mut <G as MCTSGame>::Cache,
         _heuristic_cache: &mut Self::Cache,
-        _depth: usize,
-        _alpha: f32,
+        _heuristic_config: &Self::Config,
     ) -> f32 {
         0.0
     }
@@ -981,10 +1111,10 @@ where
     fn get_children(&self) -> &Vec<usize> {
         &self.children
     }
-    fn expandable_moves(&mut self) -> Vec<G::Move> {
+    fn expandable_moves(&mut self, mcts_config: &G::Config) -> Vec<G::Move> {
         let mut expandable_moves = self
             .expansion_policy
-            .expandable_moves(self.visits, self.children.len(), &self.state)
+            .expandable_moves(self.visits, self.children.len(), &self.state, mcts_config)
             .collect::<Vec<_>>();
         expandable_moves.shuffle(&mut rand::thread_rng());
         expandable_moves
@@ -1020,7 +1150,12 @@ where
             G::perspective_player(),
         );
     }
-    fn calc_utc(&mut self, parent_visits: usize, c: f32, perspective_player: G::Player) -> f32 {
+    fn calc_utc(
+        &mut self,
+        parent_visits: usize,
+        perspective_player: G::Player,
+        mcts_config: &G::Config,
+    ) -> f32 {
         if self.visits == 0 {
             return f32::INFINITY;
         }
@@ -1031,21 +1166,28 @@ where
             perspective_player,
         );
         self.utc_cache
-            .update_exploration(self.visits, parent_visits, c);
+            .update_exploration(self.visits, parent_visits, mcts_config);
         let exploration = self
             .utc_cache
-            .get_exploration(self.visits, parent_visits, c);
+            .get_exploration(self.visits, parent_visits, mcts_config);
         exploitation + exploration
     }
 }
 trait MCTSPlayer: PartialEq {
     fn next(&self) -> Self;
 }
+trait MCTSConfig {
+    fn exploration_constant(&self) -> f32;
+    fn progressive_widening_constant(&self) -> f32;
+    fn progressive_widening_exponent(&self) -> f32;
+    fn early_cut_off_depth(&self) -> usize;
+}
 trait MCTSGame: Sized {
     type State: Clone + PartialEq;
     type Move;
     type Player: MCTSPlayer;
     type Cache: GameCache<Self::State, Self::Move>;
+    type Config: MCTSConfig;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a>;
     fn apply_move(
         state: &Self::State,
@@ -1065,8 +1207,12 @@ trait MCTSNode<G: MCTSGame> {
     fn get_visits(&self) -> usize;
     fn get_accumulated_value(&self) -> f32;
     fn update_stats(&mut self, result: f32);
-    fn calc_utc(&mut self, parent_visits: usize, base_c: f32, perspective_player: G::Player)
-        -> f32;
+    fn calc_utc(
+        &mut self,
+        parent_visits: usize,
+        perspective_player: G::Player,
+        mcts_config: &G::Config,
+    ) -> f32;
 }
 trait MCTSAlgo<G: MCTSGame> {
     fn set_root(&mut self, state: &G::State) -> bool;
@@ -1087,8 +1233,8 @@ trait UCTPolicy<G: MCTSGame> {
             1.0 - raw
         }
     }
-    fn exploration_score(visits: usize, parent_visits: usize, base_c: f32) -> f32 {
-        base_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
+    fn exploration_score(visits: usize, parent_visits: usize, mcts_config: &G::Config) -> f32 {
+        mcts_config.exploration_constant() * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
 trait UTCCache<G: MCTSGame, UP: UCTPolicy<G>> {
@@ -1107,18 +1253,22 @@ trait UTCCache<G: MCTSGame, UP: UCTPolicy<G>> {
         last_player: G::Player,
         perspective_player: G::Player,
     ) -> f32;
-    fn update_exploration(&mut self, visits: usize, parent_visits: usize, base_c: f32);
-    fn get_exploration(&self, visits: usize, parent_visits: usize, base_c: f32) -> f32;
+    fn update_exploration(&mut self, visits: usize, parent_visits: usize, mcts_config: &G::Config);
+    fn get_exploration(&self, visits: usize, parent_visits: usize, mcts_config: &G::Config) -> f32;
 }
 trait ExpansionPolicy<G: MCTSGame, H: Heuristic<G>> {
     fn new(
         state: &G::State,
         game_cache: &mut G::Cache,
         heuristic_cache: &mut H::Cache,
-        depth: usize,
-        alpha: f32,
+        heuristic_config: &H::Config,
     ) -> Self;
-    fn should_expand(&self, _visits: usize, _num_parent_children: usize) -> bool {
+    fn should_expand(
+        &self,
+        _visits: usize,
+        _num_parent_children: usize,
+        _mcts_config: &G::Config,
+    ) -> bool {
         false
     }
     fn expandable_moves<'a>(
@@ -1126,48 +1276,69 @@ trait ExpansionPolicy<G: MCTSGame, H: Heuristic<G>> {
         _visits: usize,
         _num_parent_children: usize,
         state: &'a G::State,
+        _mcts_config: &G::Config,
     ) -> Box<dyn Iterator<Item = G::Move> + 'a> {
         G::available_moves(state)
     }
 }
+trait SimulationPolicy<G: MCTSGame, H: Heuristic<G>> {
+    fn should_cutoff(
+        _state: &G::State,
+        _depth: usize,
+        _game_cache: &mut G::Cache,
+        _heuristic_cache: &mut H::Cache,
+        _perspective_player: Option<G::Player>,
+        _mcts_config: &G::Config,
+        _heuristic_config: &H::Config,
+    ) -> Option<f32> {
+        None
+    }
+}
+trait HeuristicConfig {
+    fn early_cut_off_upper_bound(&self) -> f32;
+    fn early_cut_off_lower_bound(&self) -> f32;
+    fn evaluate_state_recursive_depth(&self) -> usize;
+    fn evaluate_state_recursive_alpha(&self) -> f32;
+}
 trait Heuristic<G: MCTSGame> {
     type Cache: HeuristicCache<G::State, G::Move>;
+    type Config: HeuristicConfig;
     fn evaluate_state(
         state: &G::State,
         game_cache: &mut G::Cache,
         heuristic_cache: &mut Self::Cache,
         perspective_player: Option<G::Player>,
+        heuristic_config: &Self::Config,
     ) -> f32;
     fn evaluate_state_recursive(
         state: &G::State,
         game_cache: &mut G::Cache,
         heuristic_cache: &mut Self::Cache,
+        heuristic_config: &Self::Config,
         _depth: usize,
         _alpha: f32,
     ) -> f32 {
-        Self::evaluate_state(state, game_cache, heuristic_cache, None)
+        Self::evaluate_state(state, game_cache, heuristic_cache, None, heuristic_config)
     }
     fn evaluate_move(
         state: &G::State,
         mv: &G::Move,
         game_cache: &mut G::Cache,
         heuristic_cache: &mut Self::Cache,
-        depth: usize,
-        alpha: f32,
+        heuristic_config: &Self::Config,
     ) -> f32;
     fn sort_moves(
         state: &G::State,
         moves: Vec<G::Move>,
         game_cache: &mut G::Cache,
         heuristic_cache: &mut Self::Cache,
-        depth: usize,
-        alpha: f32,
+        heuristic_config: &Self::Config,
     ) -> Vec<G::Move> {
         let mut heuristic_moves = moves
             .into_iter()
             .map(|mv| {
                 (
-                    Self::evaluate_move(state, &mv, game_cache, heuristic_cache, depth, alpha),
+                    Self::evaluate_move(state, &mv, game_cache, heuristic_cache, heuristic_config),
                     mv,
                 )
             })
@@ -1199,17 +1370,6 @@ trait HeuristicCache<State, Move> {
         None
     }
     fn insert_move_score(&mut self, _state: &State, _mv: &Move, _score: f32) {}
-}
-trait SimulationPolicy<G: MCTSGame, H: Heuristic<G>> {
-    fn should_cutoff(
-        _state: &G::State,
-        _depth: usize,
-        _game_cache: &mut G::Cache,
-        _heuristic_cache: &mut H::Cache,
-        _perspective_player: Option<G::Player>,
-    ) -> Option<f32> {
-        None
-    }
 }
 impl MCTSPlayer for TicTacToeStatus {
     fn next(&self) -> Self {
@@ -1331,12 +1491,14 @@ impl TicTacToeGameData {
         }
         (me_threats.len(), opp_threats.len())
     }
-    fn get_meta_cell_factors(&self, cell: CellIndex3x3) -> (f32, f32) {
+    fn get_meta_cell_threats(&self, cell: CellIndex3x3) -> (i8, i8, i8, i8) {
         if self.get_cell_value(cell).is_not_vacant() {
-            return (0.0, 0.0);
+            return (0, 0, 0, 0);
         }
-        let mut my_factor = 1.0;
-        let mut opp_factor = 1.0;
+        let mut my_meta_threats = 0;
+        let mut my_meta_small_threats = 0;
+        let mut opp_meta_threats = 0;
+        let mut opp_meta_small_threats = 0;
         for score_line in Self::SCORE_LINES.iter() {
             if !score_line.contains(&cell) {
                 continue;
@@ -1346,13 +1508,18 @@ impl TicTacToeGameData {
                 .map(|&c| self.get_cell_value(c) as i8)
                 .sum();
             match threat {
-                2 => my_factor += 3.0,
-                1 => my_factor += 1.5,
-                -1 => opp_factor += 1.5,
-                -2 => opp_factor += 3.0,
+                2 => my_meta_threats += threat,
+                1 => my_meta_small_threats += threat,
+                -1 => opp_meta_small_threats -= threat,
+                -2 => opp_meta_threats -= threat,
                 _ => (),
             }
         }
-        (my_factor, opp_factor)
+        (
+            my_meta_threats,
+            my_meta_small_threats,
+            opp_meta_threats,
+            opp_meta_small_threats,
+        )
     }
 }
