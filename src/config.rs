@@ -1,0 +1,85 @@
+// configuration of UltTTT for MCTS and heuristic
+
+use super::*;
+
+pub struct UltTTTMCTSConfig {
+    pub base_config: BaseConfig,
+}
+
+impl Default for UltTTTMCTSConfig {
+    fn default() -> Self {
+        UltTTTMCTSConfig {
+            base_config: BaseConfig {
+                exploration_constant: 1.4,
+                progressive_widening_constant: 2.0,
+                progressive_widening_exponent: 0.5,
+                early_cut_off_depth: 30,
+            },
+        }
+    }
+}
+
+impl MCTSConfig for UltTTTMCTSConfig {
+    fn exploration_constant(&self) -> f32 {
+        self.base_config.exploration_constant
+    }
+    fn progressive_widening_constant(&self) -> f32 {
+        self.base_config.progressive_widening_constant
+    }
+    fn progressive_widening_exponent(&self) -> f32 {
+        self.base_config.progressive_widening_exponent
+    }
+    fn early_cut_off_depth(&self) -> usize {
+        self.base_config.early_cut_off_depth
+    }
+}
+
+pub struct UltTTTHeuristicConfig {
+    pub base_config: BaseHeuristicConfig,
+    pub meta_weight_base: f32,
+    pub meta_weight_progress_offset: f32,
+    pub meta_cell_big_threat: f32,
+    pub meta_cell_small_threat: f32,
+    pub constraint_factor: f32,
+    pub free_choice_constraint_factor: f32,
+    pub evaluate_state_recursive_alpha_reduction_factor: f32,
+    pub evaluate_state_recursive_early_exit_threshold: f32,
+    pub direct_loss_value: f32,
+}
+
+impl HeuristicConfig for UltTTTHeuristicConfig {
+    fn early_cut_off_lower_bound(&self) -> f32 {
+        self.base_config.early_cut_off_lower_bound
+    }
+    fn early_cut_off_upper_bound(&self) -> f32 {
+        self.base_config.early_cut_off_upper_bound
+    }
+    fn evaluate_state_recursive_depth(&self) -> usize {
+        self.base_config.evaluate_state_recursive_depth
+    }
+    fn evaluate_state_recursive_alpha(&self) -> f32 {
+        self.base_config.evaluate_state_recursive_alpha
+    }
+}
+
+impl Default for UltTTTHeuristicConfig {
+    fn default() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                early_cut_off_lower_bound: 0.05,
+                early_cut_off_upper_bound: 0.95,
+                evaluate_state_recursive_depth: 0,
+                evaluate_state_recursive_alpha: 0.7,
+            },
+            meta_weight_base: 0.3,
+            meta_weight_progress_offset: 0.4,
+            meta_cell_big_threat: 3.0,
+            meta_cell_small_threat: 1.5,
+            constraint_factor: 1.5,
+            free_choice_constraint_factor: 1.5,
+            evaluate_state_recursive_alpha_reduction_factor: 0.9,
+            evaluate_state_recursive_early_exit_threshold: 0.95,
+            direct_loss_value: 0.01,
+        }
+    }
+}

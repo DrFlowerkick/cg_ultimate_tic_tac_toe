@@ -1,0 +1,109 @@
+// game cache for UltTTT
+
+use super::*;
+use std::collections::HashMap;
+
+pub struct UltTTTGameCache {
+    pub cache: HashMap<TicTacToeGameData, BoardAnalysis>,
+    pub usage: usize,
+}
+
+impl UltTTTGameCache {
+    pub fn cache_board_analysis(&mut self, board: &TicTacToeGameData) -> BoardAnalysis {
+        if let Some(cached_analysis) = self.cache.get(board) {
+            self.usage += 1;
+            return *cached_analysis;
+        }
+        let board_analysis = board.board_analysis();
+        self.cache.insert(*board, board_analysis);
+        board_analysis
+    }
+}
+
+impl GameCache<UltTTT, UltTTTMove> for UltTTTGameCache {
+    fn new() -> Self {
+        UltTTTGameCache {
+            cache: HashMap::new(),
+            usage: 0,
+        }
+    }
+}
+
+pub trait UltTTTGameCacheTrait {
+    fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
+    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize);
+    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize);
+    fn get_meta_cell_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+        index: CellIndex3x3,
+    ) -> (i8, i8, i8, i8);
+}
+
+impl UltTTTGameCacheTrait for UltTTTGameCache {
+    fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
+        self.cache_board_analysis(board).status
+    }
+    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+        let board_analysis = self.cache_board_analysis(board);
+        (board_analysis.my_cells, board_analysis.opp_cells)
+    }
+    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+        let board_analysis = self.cache_board_analysis(board);
+        (board_analysis.my_threats, board_analysis.opp_threats)
+    }
+    fn get_meta_cell_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+        index: CellIndex3x3,
+    ) -> (i8, i8, i8, i8) {
+        let board_analysis = self.cache_board_analysis(board);
+        *board_analysis.meta_cell_threats.get_cell(index)
+    }
+}
+
+impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
+    fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
+        board.get_status()
+    }
+    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+        let my_wins = board.count_me_cells();
+        let opp_wins = board.count_opp_cells();
+        (my_wins, opp_wins)
+    }
+    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+        let (my_threats, opp_threats) = board.get_threats();
+        (my_threats, opp_threats)
+    }
+    fn get_meta_cell_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+        index: CellIndex3x3,
+    ) -> (i8, i8, i8, i8) {
+        board.get_meta_cell_threats(index)
+    }
+}
+use std::cell::RefCell;
+pub struct UltTTTHeuristicCache {
+    pub cache: HashMap<UltTTT, f32>,
+    pub usage: RefCell<usize>,
+}
+
+impl HeuristicCache<UltTTT, UltTTTMove> for UltTTTHeuristicCache {
+    fn new() -> Self {
+        UltTTTHeuristicCache {
+            cache: HashMap::new(),
+            usage: RefCell::new(0),
+        }
+    }
+    fn get_intermediate_score(&self, state: &UltTTT) -> Option<f32> {
+        let cached_score = self.cache.get(state).cloned();
+        if cached_score.is_some() {
+            *self.usage.borrow_mut() += 1;
+        }
+        cached_score
+    }
+    fn insert_intermediate_score(&mut self, state: &UltTTT, score: f32) {
+        self.cache.insert(*state, score);
+    }
+}

@@ -3,6 +3,7 @@
         "codingame",
         "mcts",
         "mylib",
+        "repr",
         "TTTMCTS",
         "UltTTTMCTSGame",
         "usize"

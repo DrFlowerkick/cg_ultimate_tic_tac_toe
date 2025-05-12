@@ -99,6 +99,292 @@ fn main() {
         eprintln!("Pre-Fill Iterations: {}", number_of_iterations);
     }
 }
+struct UltTTTMCTSConfig {
+    base_config: BaseConfig,
+}
+impl Default for UltTTTMCTSConfig {
+    fn default() -> Self {
+        UltTTTMCTSConfig {
+            base_config: BaseConfig {
+                exploration_constant: 1.4,
+                progressive_widening_constant: 2.0,
+                progressive_widening_exponent: 0.5,
+                early_cut_off_depth: 30,
+            },
+        }
+    }
+}
+impl MCTSConfig for UltTTTMCTSConfig {
+    fn exploration_constant(&self) -> f32 {
+        self.base_config.exploration_constant
+    }
+    fn progressive_widening_constant(&self) -> f32 {
+        self.base_config.progressive_widening_constant
+    }
+    fn progressive_widening_exponent(&self) -> f32 {
+        self.base_config.progressive_widening_exponent
+    }
+    fn early_cut_off_depth(&self) -> usize {
+        self.base_config.early_cut_off_depth
+    }
+}
+struct UltTTTHeuristicConfig {
+    base_config: BaseHeuristicConfig,
+    meta_weight_base: f32,
+    meta_weight_progress_offset: f32,
+    meta_cell_big_threat: f32,
+    meta_cell_small_threat: f32,
+    constraint_factor: f32,
+    free_choice_constraint_factor: f32,
+    evaluate_state_recursive_alpha_reduction_factor: f32,
+    evaluate_state_recursive_early_exit_threshold: f32,
+    direct_loss_value: f32,
+}
+impl HeuristicConfig for UltTTTHeuristicConfig {
+    fn early_cut_off_lower_bound(&self) -> f32 {
+        self.base_config.early_cut_off_lower_bound
+    }
+    fn early_cut_off_upper_bound(&self) -> f32 {
+        self.base_config.early_cut_off_upper_bound
+    }
+    fn evaluate_state_recursive_depth(&self) -> usize {
+        self.base_config.evaluate_state_recursive_depth
+    }
+    fn evaluate_state_recursive_alpha(&self) -> f32 {
+        self.base_config.evaluate_state_recursive_alpha
+    }
+}
+impl Default for UltTTTHeuristicConfig {
+    fn default() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                early_cut_off_lower_bound: 0.05,
+                early_cut_off_upper_bound: 0.95,
+                evaluate_state_recursive_depth: 0,
+                evaluate_state_recursive_alpha: 0.7,
+            },
+            meta_weight_base: 0.3,
+            meta_weight_progress_offset: 0.4,
+            meta_cell_big_threat: 3.0,
+            meta_cell_small_threat: 1.5,
+            constraint_factor: 1.5,
+            free_choice_constraint_factor: 1.5,
+            evaluate_state_recursive_alpha_reduction_factor: 0.9,
+            evaluate_state_recursive_early_exit_threshold: 0.95,
+            direct_loss_value: 0.01,
+        }
+    }
+}
+trait UltTTTGameCacheTrait {
+    fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
+    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize);
+    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize);
+    fn get_meta_cell_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+        index: CellIndex3x3,
+    ) -> (i8, i8, i8, i8);
+}
+impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
+    fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
+        board.get_status()
+    }
+    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+        let my_wins = board.count_me_cells();
+        let opp_wins = board.count_opp_cells();
+        (my_wins, opp_wins)
+    }
+    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+        let (my_threats, opp_threats) = board.get_threats();
+        (my_threats, opp_threats)
+    }
+    fn get_meta_cell_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+        index: CellIndex3x3,
+    ) -> (i8, i8, i8, i8) {
+        board.get_meta_cell_threats(index)
+    }
+}
+struct UltTTTHeuristic {}
+impl UltTTTHeuristic {
+    fn is_direct_loss(
+        player: TicTacToeStatus,
+        my_threats: usize,
+        my_meta_threats: i8,
+        opp_threats: usize,
+        opp_meta_threats: i8,
+    ) -> bool {
+        match player {
+            TicTacToeStatus::Me => opp_threats > 0 && opp_meta_threats > 0,
+            TicTacToeStatus::Opp => my_threats > 0 && my_meta_threats > 0,
+            _ => unreachable!("Player is alway Me or Opp"),
+        }
+    }
+}
+impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>>
+    for UltTTTHeuristic
+{
+    type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
+    type Config = UltTTTHeuristicConfig;
+    fn evaluate_state(
+        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
+        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
+        heuristic_cache: &mut Self::Cache,
+        perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
+        heuristic_config: &Self::Config,
+    ) -> f32 {
+        if let Some(score) = heuristic_cache.get_intermediate_score(state) {
+            return score;
+        }
+        let (player, check_direct_loss) = match perspective_player {
+            Some(player) => (player, player == state.last_player),
+            None => (state.last_player, true),
+        };
+        let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
+            Some(value) => value,
+            None => {
+                let mut my_threat_sum = 0.0;
+                let mut opp_threat_sum = 0.0;
+                for (status_index, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant())
+                {
+                    let (my_threats, opp_threats) =
+                        game_cache.get_board_threats(state.map.get_cell(status_index));
+                    let cell_weight = status_index.cell_weight();
+                    let (
+                        my_meta_threats,
+                        my_meta_small_threats,
+                        opp_meta_threats,
+                        opp_meta_small_threats,
+                    ) = game_cache.get_meta_cell_threats(&state.status_map, status_index);
+                    let my_meta_factor = heuristic_config.meta_cell_big_threat
+                        * my_meta_threats as f32
+                        + heuristic_config.meta_cell_small_threat * my_meta_small_threats as f32;
+                    let opp_meta_factor = heuristic_config.meta_cell_big_threat
+                        * opp_meta_threats as f32
+                        + heuristic_config.meta_cell_small_threat * opp_meta_small_threats as f32;
+                    let constraint_factor = match state.next_action_constraint {
+                        NextActionConstraint::MiniBoard(next_board) => {
+                            if status_index == next_board {
+                                if check_direct_loss
+                                    && UltTTTHeuristic::is_direct_loss(
+                                        player,
+                                        my_threats,
+                                        my_meta_threats,
+                                        opp_threats,
+                                        opp_meta_threats,
+                                    )
+                                {
+                                    return heuristic_config.direct_loss_value;
+                                }
+                                heuristic_config.constraint_factor
+                            } else {
+                                1.0
+                            }
+                        }
+                        NextActionConstraint::None => {
+                            if check_direct_loss
+                                && UltTTTHeuristic::is_direct_loss(
+                                    player,
+                                    my_threats,
+                                    my_meta_threats,
+                                    opp_threats,
+                                    opp_meta_threats,
+                                )
+                            {
+                                return heuristic_config.direct_loss_value;
+                            }
+                            heuristic_config.free_choice_constraint_factor
+                        }
+                        NextActionConstraint::Init => {
+                            unreachable!("Init is reserved for initial tree root node.")
+                        }
+                    };
+                    let (my_constraint_factor, opp_constraint_factor) = match state.current_player {
+                        TicTacToeStatus::Me => (constraint_factor, 1.0),
+                        TicTacToeStatus::Opp => (1.0, constraint_factor),
+                        _ => unreachable!("Only Me and Opp are allowed for player."),
+                    };
+                    my_threat_sum +=
+                        my_constraint_factor * my_meta_factor * cell_weight * my_threats as f32;
+                    opp_threat_sum +=
+                        opp_constraint_factor * opp_meta_factor * cell_weight * opp_threats as f32;
+                }
+                let (my_wins, opp_wins) = game_cache.get_board_wins(&state.status_map);
+                let progress = (my_wins + opp_wins) as f32 / 9.0;
+                let meta_weight = heuristic_config.meta_weight_base
+                    + heuristic_config.meta_weight_progress_offset * progress;
+                let threat_weight = 1.0 - meta_weight;
+                let max_threat_score = 1.0_f32.max(my_threat_sum + opp_threat_sum);
+                let final_score = 0.5
+                    + meta_weight * (my_wins as f32 - opp_wins as f32) / 9.0
+                    + threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
+                final_score.clamp(0.0, 1.0)
+            }
+        };
+        let score = match player {
+            TicTacToeStatus::Me => score,
+            TicTacToeStatus::Opp => 1.0 - score,
+            _ => unreachable!("Player is alway Me or Opp"),
+        };
+        heuristic_cache.insert_intermediate_score(state, score);
+        score
+    }
+    fn evaluate_state_recursive(
+        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
+        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
+        heuristic_cache: &mut Self::Cache,
+        heuristic_config: &Self::Config,
+        depth: usize,
+        alpha: f32,
+    ) -> f32 {
+        let base_heuristic =
+            Self::evaluate_state(state, game_cache, heuristic_cache, None, heuristic_config);
+        if depth == 0 || UltTTTMCTSGame::evaluate(state, game_cache).is_some() {
+            return base_heuristic;
+        }
+        let mut worst_response = f32::NEG_INFINITY;
+        let next_player_alpha = alpha
+            - (alpha - 0.5) * heuristic_config.evaluate_state_recursive_alpha_reduction_factor;
+        for next_player_move in UltTTTMCTSGame::<GC>::available_moves(state) {
+            let next_player_state =
+                UltTTTMCTSGame::apply_move(state, &next_player_move, game_cache);
+            let response_value = Self::evaluate_state_recursive(
+                &next_player_state,
+                game_cache,
+                heuristic_cache,
+                heuristic_config,
+                depth - 1,
+                next_player_alpha,
+            );
+            if response_value > worst_response {
+                worst_response = response_value;
+                if worst_response >= heuristic_config.evaluate_state_recursive_early_exit_threshold
+                {
+                    break;
+                }
+            }
+        }
+        alpha * base_heuristic + (1.0 - alpha) * (1.0 - worst_response)
+    }
+    fn evaluate_move(
+        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
+        mv: &<UltTTTMCTSGame<GC> as MCTSGame>::Move,
+        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
+        heuristic_cache: &mut Self::Cache,
+        heuristic_config: &Self::Config,
+    ) -> f32 {
+        let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
+        UltTTTHeuristic::evaluate_state_recursive(
+            &new_state,
+            game_cache,
+            heuristic_cache,
+            heuristic_config,
+            heuristic_config.evaluate_state_recursive_depth(),
+            heuristic_config.evaluate_state_recursive_alpha(),
+        )
+    }
+}
 use std::cmp::Ordering;
 use std::fmt::Write;
 #[derive(Copy, Clone, PartialEq, Default)]
@@ -185,35 +471,6 @@ impl UltTTT {
 }
 type UltTTTMCTSGameNoGameCache = UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>;
 type HPWDefaultTTTNoGameCache = HeuristicProgressiveWidening<UltTTTMCTSGameNoGameCache>;
-struct UltTTTMCTSConfig {
-    base_config: BaseConfig,
-}
-impl Default for UltTTTMCTSConfig {
-    fn default() -> Self {
-        UltTTTMCTSConfig {
-            base_config: BaseConfig {
-                exploration_constant: 1.4,
-                progressive_widening_constant: 2.0,
-                progressive_widening_exponent: 0.5,
-                early_cut_off_depth: 30,
-            },
-        }
-    }
-}
-impl MCTSConfig for UltTTTMCTSConfig {
-    fn exploration_constant(&self) -> f32 {
-        self.base_config.exploration_constant
-    }
-    fn progressive_widening_constant(&self) -> f32 {
-        self.base_config.progressive_widening_constant
-    }
-    fn progressive_widening_exponent(&self) -> f32 {
-        self.base_config.progressive_widening_exponent
-    }
-    fn early_cut_off_depth(&self) -> usize {
-        self.base_config.early_cut_off_depth
-    }
-}
 struct UltTTTMCTSGame<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> {
     phantom: std::marker::PhantomData<GC>,
 }
@@ -304,224 +561,6 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> MCTSGame for UltT
     }
     fn perspective_player() -> Self::Player {
         TicTacToeStatus::Me
-    }
-}
-trait UltTTTGameCacheTrait {
-    fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
-    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (f32, f32);
-    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (f32, f32);
-    fn get_meta_cell_threats(
-        &mut self,
-        board: &TicTacToeGameData,
-        index: CellIndex3x3,
-    ) -> (i8, i8, i8, i8);
-}
-impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
-    fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
-        board.get_status()
-    }
-    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (f32, f32) {
-        let my_wins = board.count_me_cells() as f32;
-        let opp_wins = board.count_opp_cells() as f32;
-        (my_wins, opp_wins)
-    }
-    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (f32, f32) {
-        let (my_threats, opp_threats) = board.get_threats();
-        (my_threats as f32, opp_threats as f32)
-    }
-    fn get_meta_cell_threats(
-        &mut self,
-        board: &TicTacToeGameData,
-        index: CellIndex3x3,
-    ) -> (i8, i8, i8, i8) {
-        board.get_meta_cell_threats(index)
-    }
-}
-struct UltTTTHeuristicConfig {
-    base_config: BaseHeuristicConfig,
-    meta_weight_base: f32,
-    meta_weight_progress_offset: f32,
-    meta_cell_big_threat: f32,
-    meta_cell_small_threat: f32,
-    constraint_factor: f32,
-    free_choice_constraint_factor: f32,
-    evaluate_state_recursive_alpha_reduction_factor: f32,
-    evaluate_state_recursive_early_exit_threshold: f32,
-}
-impl HeuristicConfig for UltTTTHeuristicConfig {
-    fn early_cut_off_lower_bound(&self) -> f32 {
-        self.base_config.early_cut_off_lower_bound
-    }
-    fn early_cut_off_upper_bound(&self) -> f32 {
-        self.base_config.early_cut_off_upper_bound
-    }
-    fn evaluate_state_recursive_depth(&self) -> usize {
-        self.base_config.evaluate_state_recursive_depth
-    }
-    fn evaluate_state_recursive_alpha(&self) -> f32 {
-        self.base_config.evaluate_state_recursive_alpha
-    }
-}
-impl Default for UltTTTHeuristicConfig {
-    fn default() -> Self {
-        UltTTTHeuristicConfig {
-            base_config: BaseHeuristicConfig {
-                early_cut_off_lower_bound: 0.05,
-                early_cut_off_upper_bound: 0.95,
-                evaluate_state_recursive_depth: 0,
-                evaluate_state_recursive_alpha: 0.7,
-            },
-            meta_weight_base: 0.3,
-            meta_weight_progress_offset: 0.4,
-            meta_cell_big_threat: 3.0,
-            meta_cell_small_threat: 1.5,
-            constraint_factor: 1.5,
-            free_choice_constraint_factor: 1.5,
-            evaluate_state_recursive_alpha_reduction_factor: 0.9,
-            evaluate_state_recursive_early_exit_threshold: 0.95,
-        }
-    }
-}
-struct UltTTTHeuristic {}
-impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>>
-    for UltTTTHeuristic
-{
-    type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
-    type Config = UltTTTHeuristicConfig;
-    fn evaluate_state(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
-        heuristic_cache: &mut Self::Cache,
-        perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
-        heuristic_config: &Self::Config,
-    ) -> f32 {
-        if let Some(score) = heuristic_cache.get_intermediate_score(state) {
-            return score;
-        }
-        let player = match perspective_player {
-            Some(player) => player,
-            None => state.last_player,
-        };
-        let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
-            Some(value) => value,
-            None => {
-                let (my_wins, opp_wins) = game_cache.get_board_wins(&state.status_map);
-                let mut my_threat_sum = 0.0;
-                let mut opp_threat_sum = 0.0;
-                for (status_index, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant())
-                {
-                    let constraint_factor = match state.next_action_constraint {
-                        NextActionConstraint::MiniBoard(next_board) => {
-                            if status_index == next_board {
-                                heuristic_config.constraint_factor
-                            } else {
-                                1.0
-                            }
-                        }
-                        NextActionConstraint::None => {
-                            heuristic_config.free_choice_constraint_factor
-                        }
-                        NextActionConstraint::Init => {
-                            unreachable!("Init is reserved for initial tree root node.")
-                        }
-                    };
-                    let (my_constraint_factor, opp_constraint_factor) = match state.current_player {
-                        TicTacToeStatus::Me => (constraint_factor, 1.0),
-                        TicTacToeStatus::Opp => (1.0, constraint_factor),
-                        _ => unreachable!("Only Me and Opp are allowed for player."),
-                    };
-                    let cell_weight = status_index.cell_weight();
-                    let (
-                        my_meta_threats,
-                        my_meta_small_threats,
-                        opp_meta_threats,
-                        opp_meta_small_threats,
-                    ) = game_cache.get_meta_cell_threats(&state.status_map, status_index);
-                    let my_meta_factor = heuristic_config.meta_cell_big_threat
-                        * my_meta_threats as f32
-                        + heuristic_config.meta_cell_small_threat * my_meta_small_threats as f32;
-                    let opp_meta_factor = heuristic_config.meta_cell_big_threat
-                        * opp_meta_threats as f32
-                        + heuristic_config.meta_cell_small_threat * opp_meta_small_threats as f32;
-                    let (my_threats, opp_threats) =
-                        game_cache.get_board_threats(state.map.get_cell(status_index));
-                    my_threat_sum +=
-                        my_constraint_factor * my_meta_factor * cell_weight * my_threats;
-                    opp_threat_sum +=
-                        opp_constraint_factor * opp_meta_factor * cell_weight * opp_threats;
-                }
-                let progress = (my_wins + opp_wins) / 9.0;
-                let meta_weight = heuristic_config.meta_weight_base
-                    + heuristic_config.meta_weight_progress_offset * progress;
-                let threat_weight = 1.0 - meta_weight;
-                let max_threat_score = 1.0_f32.max(my_threat_sum + opp_threat_sum);
-                let final_score = 0.5
-                    + meta_weight * (my_wins - opp_wins) / 9.0
-                    + threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
-                final_score.clamp(0.0, 1.0)
-            }
-        };
-        let score = match player {
-            TicTacToeStatus::Me => score,
-            TicTacToeStatus::Opp => 1.0 - score,
-            _ => unreachable!("Player is alway Me or Opp"),
-        };
-        heuristic_cache.insert_intermediate_score(state, score);
-        score
-    }
-    fn evaluate_state_recursive(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
-        heuristic_cache: &mut Self::Cache,
-        heuristic_config: &Self::Config,
-        depth: usize,
-        alpha: f32,
-    ) -> f32 {
-        let base_heuristic =
-            Self::evaluate_state(state, game_cache, heuristic_cache, None, heuristic_config);
-        if depth == 0 || UltTTTMCTSGame::evaluate(state, game_cache).is_some() {
-            return base_heuristic;
-        }
-        let mut worst_response = f32::NEG_INFINITY;
-        let next_player_alpha = alpha
-            - (alpha - 0.5) * heuristic_config.evaluate_state_recursive_alpha_reduction_factor;
-        for next_player_move in UltTTTMCTSGame::<GC>::available_moves(state) {
-            let next_player_state =
-                UltTTTMCTSGame::apply_move(state, &next_player_move, game_cache);
-            let response_value = Self::evaluate_state_recursive(
-                &next_player_state,
-                game_cache,
-                heuristic_cache,
-                heuristic_config,
-                depth - 1,
-                next_player_alpha,
-            );
-            if response_value > worst_response {
-                worst_response = response_value;
-                if worst_response >= heuristic_config.evaluate_state_recursive_early_exit_threshold
-                {
-                    break;
-                }
-            }
-        }
-        alpha * base_heuristic + (1.0 - alpha) * (1.0 - worst_response)
-    }
-    fn evaluate_move(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        mv: &<UltTTTMCTSGame<GC> as MCTSGame>::Move,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
-        heuristic_cache: &mut Self::Cache,
-        heuristic_config: &Self::Config,
-    ) -> f32 {
-        let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
-        UltTTTHeuristic::evaluate_state_recursive(
-            &new_state,
-            game_cache,
-            heuristic_cache,
-            heuristic_config,
-            heuristic_config.evaluate_state_recursive_depth(),
-            heuristic_config.evaluate_state_recursive_alpha(),
-        )
     }
 }
 use std::convert::TryFrom;
@@ -1508,10 +1547,10 @@ impl TicTacToeGameData {
                 .map(|&c| self.get_cell_value(c) as i8)
                 .sum();
             match threat {
-                2 => my_meta_threats += threat,
-                1 => my_meta_small_threats += threat,
-                -1 => opp_meta_small_threats -= threat,
-                -2 => opp_meta_threats -= threat,
+                2 => my_meta_threats += 1,
+                1 => my_meta_small_threats += 1,
+                -1 => opp_meta_small_threats += 1,
+                -2 => opp_meta_threats += 1,
                 _ => (),
             }
         }

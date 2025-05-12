@@ -87,6 +87,8 @@ exclude = [
 include = [
     "impl CellIndex3x3",
     "impl Default for BaseHeuristicConfig",
+    "impl Default for UltTTTHeuristicConfig",
+    "impl Default for UltTTTMCTSConfig",
     "impl From<CellIndex3x3> for (u8,u8)",
     "impl From<CellIndex3x3> for usize",
     "impl From<UltTTTMove> for (u8,u8)",
