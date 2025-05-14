@@ -2,6 +2,7 @@
 
 use super::*;
 
+#[derive(Debug, Clone, Copy)]
 pub struct UltTTTMCTSConfig {
     pub base_config: BaseConfig,
 }
@@ -34,6 +35,7 @@ impl MCTSConfig for UltTTTMCTSConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct UltTTTHeuristicConfig {
     pub base_config: BaseHeuristicConfig,
     pub meta_weight_base: f32,

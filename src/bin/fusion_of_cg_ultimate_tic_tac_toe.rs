@@ -317,8 +317,8 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 let threat_weight = 1.0 - meta_weight;
                 let max_threat_score = 1.0_f32.max(my_threat_sum + opp_threat_sum);
                 let final_score = 0.5
-                    + meta_weight * (my_wins as f32 - opp_wins as f32) / 9.0
-                    + threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
+                    + 0.5 * meta_weight * (my_wins as f32 - opp_wins as f32) / 9.0
+                    + 0.5 * threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
                 final_score.clamp(0.0, 1.0)
             }
         };
