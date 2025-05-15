@@ -99,6 +99,7 @@ fn main() {
         eprintln!("Pre-Fill Iterations: {}", number_of_iterations);
     }
 }
+#[derive(Debug, Clone, Copy)]
 struct UltTTTMCTSConfig {
     base_config: BaseConfig,
 }
@@ -128,6 +129,7 @@ impl MCTSConfig for UltTTTMCTSConfig {
         self.base_config.early_cut_off_depth
     }
 }
+#[derive(Debug, Clone, Copy)]
 struct UltTTTHeuristicConfig {
     base_config: BaseHeuristicConfig,
     meta_weight_base: f32,
@@ -177,32 +179,32 @@ impl Default for UltTTTHeuristicConfig {
 }
 trait UltTTTGameCacheTrait {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
-    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize);
+    fn get_board_progress(&mut self, board: &TicTacToeGameData) -> (usize, usize, usize);
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize);
     fn get_meta_cell_threats(
         &mut self,
         board: &TicTacToeGameData,
         index: CellIndex3x3,
-    ) -> (i8, i8, i8, i8);
+    ) -> (u8, u8, u8, u8);
 }
 impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
         board.get_status()
     }
-    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+    fn get_board_progress(&mut self, board: &TicTacToeGameData) -> (usize, usize, usize) {
         let my_wins = board.count_me_cells();
         let opp_wins = board.count_opp_cells();
-        (my_wins, opp_wins)
+        let played_cells = board.count_non_vacant_cells();
+        (my_wins, opp_wins, played_cells)
     }
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
-        let (my_threats, opp_threats) = board.get_threats();
-        (my_threats, opp_threats)
+        board.get_threats()
     }
     fn get_meta_cell_threats(
         &mut self,
         board: &TicTacToeGameData,
         index: CellIndex3x3,
-    ) -> (i8, i8, i8, i8) {
+    ) -> (u8, u8, u8, u8) {
         board.get_meta_cell_threats(index)
     }
 }
@@ -211,9 +213,9 @@ impl UltTTTHeuristic {
     fn is_direct_loss(
         player: TicTacToeStatus,
         my_threats: usize,
-        my_meta_threats: i8,
+        my_meta_threats: u8,
         opp_threats: usize,
-        opp_meta_threats: i8,
+        opp_meta_threats: u8,
     ) -> bool {
         match player {
             TicTacToeStatus::Me => opp_threats > 0 && opp_meta_threats > 0,
@@ -237,9 +239,15 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         if let Some(score) = heuristic_cache.get_intermediate_score(state) {
             return score;
         }
-        let (player, check_direct_loss) = match perspective_player {
-            Some(player) => (player, player == state.last_player),
-            None => (state.last_player, true),
+        let (player, direct_loss_value) = match perspective_player {
+            Some(player) => {
+                if player == state.last_player {
+                    (player, heuristic_config.direct_loss_value)
+                } else {
+                    (player, 1.0 - heuristic_config.direct_loss_value)
+                }
+            }
+            None => (state.last_player, heuristic_config.direct_loss_value),
         };
         let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
@@ -257,25 +265,23 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                         opp_meta_threats,
                         opp_meta_small_threats,
                     ) = game_cache.get_meta_cell_threats(&state.status_map, status_index);
-                    let my_meta_factor = heuristic_config.meta_cell_big_threat
-                        * my_meta_threats as f32
+                    let my_meta_factor = 1.0
+                        + heuristic_config.meta_cell_big_threat * my_meta_threats as f32
                         + heuristic_config.meta_cell_small_threat * my_meta_small_threats as f32;
-                    let opp_meta_factor = heuristic_config.meta_cell_big_threat
-                        * opp_meta_threats as f32
+                    let opp_meta_factor = 1.0
+                        + heuristic_config.meta_cell_big_threat * opp_meta_threats as f32
                         + heuristic_config.meta_cell_small_threat * opp_meta_small_threats as f32;
                     let constraint_factor = match state.next_action_constraint {
                         NextActionConstraint::MiniBoard(next_board) => {
                             if status_index == next_board {
-                                if check_direct_loss
-                                    && UltTTTHeuristic::is_direct_loss(
-                                        player,
-                                        my_threats,
-                                        my_meta_threats,
-                                        opp_threats,
-                                        opp_meta_threats,
-                                    )
-                                {
-                                    return heuristic_config.direct_loss_value;
+                                if UltTTTHeuristic::is_direct_loss(
+                                    state.last_player,
+                                    my_threats,
+                                    my_meta_threats,
+                                    opp_threats,
+                                    opp_meta_threats,
+                                ) {
+                                    return direct_loss_value;
                                 }
                                 heuristic_config.constraint_factor
                             } else {
@@ -283,16 +289,14 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                             }
                         }
                         NextActionConstraint::None => {
-                            if check_direct_loss
-                                && UltTTTHeuristic::is_direct_loss(
-                                    player,
-                                    my_threats,
-                                    my_meta_threats,
-                                    opp_threats,
-                                    opp_meta_threats,
-                                )
-                            {
-                                return heuristic_config.direct_loss_value;
+                            if UltTTTHeuristic::is_direct_loss(
+                                state.last_player,
+                                my_threats,
+                                my_meta_threats,
+                                opp_threats,
+                                opp_meta_threats,
+                            ) {
+                                return direct_loss_value;
                             }
                             heuristic_config.free_choice_constraint_factor
                         }
@@ -310,12 +314,13 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                     opp_threat_sum +=
                         opp_constraint_factor * opp_meta_factor * cell_weight * opp_threats as f32;
                 }
-                let (my_wins, opp_wins) = game_cache.get_board_wins(&state.status_map);
-                let progress = (my_wins + opp_wins) as f32 / 9.0;
+                let (my_wins, opp_wins, played_cells) =
+                    game_cache.get_board_progress(&state.status_map);
+                let progress = played_cells as f32 / 9.0;
                 let meta_weight = heuristic_config.meta_weight_base
                     + heuristic_config.meta_weight_progress_offset * progress;
                 let threat_weight = 1.0 - meta_weight;
-                let max_threat_score = 1.0_f32.max(my_threat_sum + opp_threat_sum);
+                let max_threat_score = (my_threat_sum + opp_threat_sum).max(1.0);
                 let final_score = 0.5
                     + 0.5 * meta_weight * (my_wins as f32 - opp_wins as f32) / 9.0
                     + 0.5 * threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
@@ -843,6 +848,7 @@ where
     }
 }
 use rand::prelude::SliceRandom;
+#[derive(Debug, Clone, Copy)]
 struct BaseConfig {
     exploration_constant: f32,
     progressive_widening_constant: f32,
@@ -1042,6 +1048,7 @@ impl<State, Move> HeuristicCache<State, Move> for NoHeuristicCache<State, Move> 
         }
     }
 }
+#[derive(Debug, Clone, Copy)]
 struct BaseHeuristicConfig {
     early_cut_off_lower_bound: f32,
     early_cut_off_upper_bound: f32,
@@ -1503,6 +1510,12 @@ impl TicTacToeGameData {
     fn iter_map(&self) -> impl Iterator<Item = (CellIndex3x3, &TicTacToeStatus)> {
         self.map.iterate()
     }
+    fn count_non_vacant_cells(&self) -> usize {
+        self.map
+            .iterate()
+            .filter(|(_, v)| v.is_not_vacant())
+            .count()
+    }
     fn get_threats(&self) -> (usize, usize) {
         let mut me_threats: HashSet<CellIndex3x3> = HashSet::new();
         let mut opp_threats: HashSet<CellIndex3x3> = HashSet::new();
@@ -1530,7 +1543,7 @@ impl TicTacToeGameData {
         }
         (me_threats.len(), opp_threats.len())
     }
-    fn get_meta_cell_threats(&self, cell: CellIndex3x3) -> (i8, i8, i8, i8) {
+    fn get_meta_cell_threats(&self, cell: CellIndex3x3) -> (u8, u8, u8, u8) {
         if self.get_cell_value(cell).is_not_vacant() {
             return (0, 0, 0, 0);
         }

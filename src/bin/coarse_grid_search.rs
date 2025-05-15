@@ -104,13 +104,15 @@ fn main() {
     let meta_weight_base_vals = [0.2, 0.3, 0.5];
     let constraint_factor_vals = [1.0, 1.5, 2.0];
     let meta_cell_big_threat_vals = [2.0, 3.0, 4.0];
-    let direct_loss_value_vals = [0.01, 0.1, 0.2];
+    let meta_cell_small_threat_vals = [0.5, 1.0, 1.5];
+    let direct_loss_value_vals = [0.0, 0.005, 0.01, 0.025];
 
     let num_matches = 100;
 
-    let total_num_of_matches = meta_cell_big_threat_vals.len()
+    let total_num_of_matches = meta_weight_base_vals.len()
         * constraint_factor_vals.len()
         * meta_cell_big_threat_vals.len()
+        * meta_cell_small_threat_vals.len()
         * direct_loss_value_vals.len()
         * num_matches;
 
@@ -129,39 +131,44 @@ fn main() {
                     meta_cell_big_threat_vals
                         .iter()
                         .for_each(|&meta_cell_big_threat| {
-                            direct_loss_value_vals
+                            meta_cell_small_threat_vals
                                 .iter()
-                                .for_each(|&direct_loss_value| {
-                                    let mut params = FullConfig {
-                                        mtcs: UltTTTMCTSConfig::default(),
-                                        heuristic: UltTTTHeuristicConfig::default(),
-                                    };
-                                    params.heuristic.meta_weight_base = meta_weight_base;
-                                    params.heuristic.constraint_factor = constraint_factor;
-                                    params.heuristic.free_choice_constraint_factor =
-                                        constraint_factor;
-                                    params.heuristic.meta_cell_big_threat = meta_cell_big_threat;
-                                    params.heuristic.direct_loss_value = direct_loss_value;
+                                .for_each(|&meta_cell_small_threat| {
+                                direct_loss_value_vals
+                                    .iter()
+                                    .for_each(|&direct_loss_value| {
+                                        let mut params = FullConfig {
+                                            mtcs: UltTTTMCTSConfig::default(),
+                                            heuristic: UltTTTHeuristicConfig::default(),
+                                        };
+                                        params.heuristic.meta_weight_base = meta_weight_base;
+                                        params.heuristic.constraint_factor = constraint_factor;
+                                        params.heuristic.free_choice_constraint_factor =
+                                            constraint_factor;
+                                        params.heuristic.meta_cell_big_threat = meta_cell_big_threat;
+                                        params.heuristic.meta_cell_small_threat = meta_cell_small_threat;
+                                        params.heuristic.direct_loss_value = direct_loss_value;
 
-                                    let mut total_score: f32 = 0.0;
-                                    (0..num_matches).for_each(|match_counter| {
-                                        total_score += run_match(&params, match_counter % 2 == 0);
-                                        let progress = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
-                                        if progress % 10 == 0 {
-                                            println!("[{}/{}] progress...", progress, total_num_of_matches);
-                                        }
+                                        let mut total_score: f32 = 0.0;
+                                        (0..num_matches).for_each(|match_counter| {
+                                            total_score += run_match(&params, match_counter % 2 == 0);
+                                            let progress = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
+                                            if progress % 10 == 0 {
+                                                println!("[{}/{}] progress...", progress, total_num_of_matches);
+                                            }
+                                        });
+
+                                        let avg_score = total_score / num_matches as f32;
+
+                                        println!("Config: meta_weight_base = {:.2}, constraint_factor = {:.2}, meta_cell_big_threat = {:.2}, direct_loss_value = {:.2} → Avg Score: {:.3}",
+                                            params.heuristic.meta_weight_base,
+                                            params.heuristic.constraint_factor,
+                                            params.heuristic.meta_cell_big_threat,
+                                            params.heuristic.direct_loss_value,
+                                            avg_score);
+
+                                        results.lock().unwrap().push((params, avg_score));
                                     });
-
-                                    let avg_score = total_score / num_matches as f32;
-
-                                    println!("Config: meta_weight_base = {:.2}, constraint_factor = {:.2}, meta_cell_big_threat = {:.2}, direct_loss_value = {:.2} → Avg Score: {:.3}",
-                                        params.heuristic.meta_weight_base,
-                                        params.heuristic.constraint_factor,
-                                        params.heuristic.meta_cell_big_threat,
-                                        params.heuristic.direct_loss_value,
-                                        avg_score);
-
-                                    results.lock().unwrap().push((params, avg_score));
                                 });
                         });
                 });

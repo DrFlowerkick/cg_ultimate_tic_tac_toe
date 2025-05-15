@@ -31,22 +31,26 @@ impl GameCache<UltTTT, UltTTTMove> for UltTTTGameCache {
 
 pub trait UltTTTGameCacheTrait {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
-    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize);
+    fn get_board_progress(&mut self, board: &TicTacToeGameData) -> (usize, usize, usize);
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize);
     fn get_meta_cell_threats(
         &mut self,
         board: &TicTacToeGameData,
         index: CellIndex3x3,
-    ) -> (i8, i8, i8, i8);
+    ) -> (u8, u8, u8, u8);
 }
 
 impl UltTTTGameCacheTrait for UltTTTGameCache {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
         self.cache_board_analysis(board).status
     }
-    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+    fn get_board_progress(&mut self, board: &TicTacToeGameData) -> (usize, usize, usize) {
         let board_analysis = self.cache_board_analysis(board);
-        (board_analysis.my_cells, board_analysis.opp_cells)
+        (
+            board_analysis.my_cells,
+            board_analysis.opp_cells,
+            board_analysis.played_cells,
+        )
     }
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
         let board_analysis = self.cache_board_analysis(board);
@@ -56,7 +60,7 @@ impl UltTTTGameCacheTrait for UltTTTGameCache {
         &mut self,
         board: &TicTacToeGameData,
         index: CellIndex3x3,
-    ) -> (i8, i8, i8, i8) {
+    ) -> (u8, u8, u8, u8) {
         let board_analysis = self.cache_board_analysis(board);
         *board_analysis.meta_cell_threats.get_cell(index)
     }
@@ -66,20 +70,20 @@ impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus {
         board.get_status()
     }
-    fn get_board_wins(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+    fn get_board_progress(&mut self, board: &TicTacToeGameData) -> (usize, usize, usize) {
         let my_wins = board.count_me_cells();
         let opp_wins = board.count_opp_cells();
-        (my_wins, opp_wins)
+        let played_cells = board.count_non_vacant_cells();
+        (my_wins, opp_wins, played_cells)
     }
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
-        let (my_threats, opp_threats) = board.get_threats();
-        (my_threats, opp_threats)
+        board.get_threats()
     }
     fn get_meta_cell_threats(
         &mut self,
         board: &TicTacToeGameData,
         index: CellIndex3x3,
-    ) -> (i8, i8, i8, i8) {
+    ) -> (u8, u8, u8, u8) {
         board.get_meta_cell_threats(index)
     }
 }
