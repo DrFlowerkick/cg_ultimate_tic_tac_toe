@@ -125,6 +125,7 @@ exclude = [
     "impl GameCache<TicTacToeGame,TicTacToePlayerAction> for TicTacToeGameCache",
     "impl GameCache<UltTTT,UltTTTMove> for UltTTTGameCache",
     "impl HeuristicCache<UltTTT,UltTTTMove> for UltTTTHeuristicCache",
+    "impl HeuristicConfig for BaseRecursiveConfig",
     "impl MCTSGame for TicTacToeMCTSGame",
     "impl MCTSPlayer for TwoPlayer",
     "impl UltTTTGameCacheTrait for UltTTTGameCache",

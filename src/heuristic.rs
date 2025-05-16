@@ -33,23 +33,19 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
         heuristic_config: &Self::Config,
     ) -> f32 {
-        if let Some(score) = heuristic_cache.get_intermediate_score(state) {
-            return score;
-        }
-        // Check direct loss for perspective player only, if he is last_player.
-        // If perspective_player is current_player, he is next to move and cannot loose directly.
-        let (player, direct_loss_value) = match perspective_player {
-            Some(player) => {
-                if player == state.last_player {
-                    // perspective player direct loss
-                    (player, heuristic_config.direct_loss_value)
-                } else {
-                    // perspective player direct win -> invert heuristic value
-                    (player, 1.0 - heuristic_config.direct_loss_value)
-                }
-            }
-            None => (state.last_player, heuristic_config.direct_loss_value),
+        // If perspective_player is not last_player, we need to invert heuristic score
+        let perspective_is_last_player = match perspective_player {
+            Some(player) => player == state.last_player,
+            None => true,
         };
+        // return cached score if available
+        if let Some(score) = heuristic_cache.get_intermediate_score(state) {
+            return if perspective_is_last_player {
+                score
+            } else {
+                1.0 - score
+            };
+        }
         let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
             None => {
@@ -87,7 +83,15 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                                     opp_threats,
                                     opp_meta_threats,
                                 ) {
-                                    return direct_loss_value;
+                                    heuristic_cache.insert_intermediate_score(
+                                        state,
+                                        heuristic_config.direct_loss_value,
+                                    );
+                                    return if perspective_is_last_player {
+                                        heuristic_config.direct_loss_value
+                                    } else {
+                                        1.0 - heuristic_config.direct_loss_value
+                                    };
                                 }
                                 heuristic_config.constraint_factor
                             } else {
@@ -102,7 +106,15 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                                 opp_threats,
                                 opp_meta_threats,
                             ) {
-                                return direct_loss_value;
+                                heuristic_cache.insert_intermediate_score(
+                                    state,
+                                    heuristic_config.direct_loss_value,
+                                );
+                                return if perspective_is_last_player {
+                                    heuristic_config.direct_loss_value
+                                } else {
+                                    1.0 - heuristic_config.direct_loss_value
+                                };
                             }
                             heuristic_config.free_choice_constraint_factor
                         }
@@ -111,7 +123,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                         }
                     };
                     // constraint factor is applied to current_player, because NextActionConstraint constrains
-                    // the moves of current_player.
+                    // next moves of current_player.
                     let (my_constraint_factor, opp_constraint_factor) = match state.current_player {
                         TicTacToeStatus::Me => (constraint_factor, 1.0),
                         TicTacToeStatus::Opp => (1.0, constraint_factor),
@@ -141,14 +153,19 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 final_score.clamp(0.0, 1.0)
             }
         };
-
-        let score = match player {
+        // score is calculated from perspective of me
+        // --> invert score, if last_player is opp
+        let score = match state.last_player {
             TicTacToeStatus::Me => score,
             TicTacToeStatus::Opp => 1.0 - score,
             _ => unreachable!("Player is alway Me or Opp"),
         };
         heuristic_cache.insert_intermediate_score(state, score);
-        score
+        if perspective_is_last_player {
+            score
+        } else {
+            1.0 - score
+        }
     }
 
     fn evaluate_move(

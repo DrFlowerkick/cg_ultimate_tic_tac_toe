@@ -110,7 +110,7 @@ impl Default for UltTTTMCTSConfig {
                 exploration_constant: 1.4,
                 progressive_widening_constant: 2.0,
                 progressive_widening_exponent: 0.5,
-                early_cut_off_depth: 20,
+                early_cut_off_depth: 30,
             },
         }
     }
@@ -138,8 +138,6 @@ struct UltTTTHeuristicConfig {
     meta_cell_small_threat: f32,
     constraint_factor: f32,
     free_choice_constraint_factor: f32,
-    evaluate_state_recursive_alpha_reduction_factor: f32,
-    evaluate_state_recursive_early_exit_threshold: f32,
     direct_loss_value: f32,
 }
 impl HeuristicConfig for UltTTTHeuristicConfig {
@@ -155,12 +153,6 @@ impl HeuristicConfig for UltTTTHeuristicConfig {
     fn early_cut_off_upper_bound(&self) -> f32 {
         self.base_config.early_cut_off_upper_bound
     }
-    fn evaluate_state_recursive_depth(&self) -> usize {
-        self.base_config.evaluate_state_recursive_depth
-    }
-    fn evaluate_state_recursive_alpha(&self) -> f32 {
-        self.base_config.evaluate_state_recursive_alpha
-    }
 }
 impl Default for UltTTTHeuristicConfig {
     fn default() -> Self {
@@ -170,8 +162,6 @@ impl Default for UltTTTHeuristicConfig {
                 progressive_widening_decay_rate: 0.95,
                 early_cut_off_lower_bound: 0.05,
                 early_cut_off_upper_bound: 0.95,
-                evaluate_state_recursive_depth: 0,
-                evaluate_state_recursive_alpha: 0.7,
             },
             meta_weight_base: 0.3,
             meta_weight_progress_offset: 0.4,
@@ -179,8 +169,6 @@ impl Default for UltTTTHeuristicConfig {
             meta_cell_small_threat: 1.5,
             constraint_factor: 1.5,
             free_choice_constraint_factor: 1.5,
-            evaluate_state_recursive_alpha_reduction_factor: 0.9,
-            evaluate_state_recursive_early_exit_threshold: 0.95,
             direct_loss_value: 0.01,
         }
     }
@@ -244,19 +232,17 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
         heuristic_config: &Self::Config,
     ) -> f32 {
-        if let Some(score) = heuristic_cache.get_intermediate_score(state) {
-            return score;
-        }
-        let (player, direct_loss_value) = match perspective_player {
-            Some(player) => {
-                if player == state.last_player {
-                    (player, heuristic_config.direct_loss_value)
-                } else {
-                    (player, 1.0 - heuristic_config.direct_loss_value)
-                }
-            }
-            None => (state.last_player, heuristic_config.direct_loss_value),
+        let perspective_is_last_player = match perspective_player {
+            Some(player) => player == state.last_player,
+            None => true,
         };
+        if let Some(score) = heuristic_cache.get_intermediate_score(state) {
+            return if perspective_is_last_player {
+                score
+            } else {
+                1.0 - score
+            };
+        }
         let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
             None => {
@@ -289,7 +275,15 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                                     opp_threats,
                                     opp_meta_threats,
                                 ) {
-                                    return direct_loss_value;
+                                    heuristic_cache.insert_intermediate_score(
+                                        state,
+                                        heuristic_config.direct_loss_value,
+                                    );
+                                    return if perspective_is_last_player {
+                                        heuristic_config.direct_loss_value
+                                    } else {
+                                        1.0 - heuristic_config.direct_loss_value
+                                    };
                                 }
                                 heuristic_config.constraint_factor
                             } else {
@@ -304,7 +298,15 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                                 opp_threats,
                                 opp_meta_threats,
                             ) {
-                                return direct_loss_value;
+                                heuristic_cache.insert_intermediate_score(
+                                    state,
+                                    heuristic_config.direct_loss_value,
+                                );
+                                return if perspective_is_last_player {
+                                    heuristic_config.direct_loss_value
+                                } else {
+                                    1.0 - heuristic_config.direct_loss_value
+                                };
                             }
                             heuristic_config.free_choice_constraint_factor
                         }
@@ -335,50 +337,17 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 final_score.clamp(0.0, 1.0)
             }
         };
-        let score = match player {
+        let score = match state.last_player {
             TicTacToeStatus::Me => score,
             TicTacToeStatus::Opp => 1.0 - score,
             _ => unreachable!("Player is alway Me or Opp"),
         };
         heuristic_cache.insert_intermediate_score(state, score);
-        score
-    }
-    fn evaluate_state_recursive(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
-        heuristic_cache: &mut Self::Cache,
-        heuristic_config: &Self::Config,
-        depth: usize,
-        alpha: f32,
-    ) -> f32 {
-        let base_heuristic =
-            Self::evaluate_state(state, game_cache, heuristic_cache, None, heuristic_config);
-        if depth == 0 || UltTTTMCTSGame::evaluate(state, game_cache).is_some() {
-            return base_heuristic;
+        if perspective_is_last_player {
+            score
+        } else {
+            1.0 - score
         }
-        let mut worst_response = f32::NEG_INFINITY;
-        let next_player_alpha = alpha
-            - (alpha - 0.5) * heuristic_config.evaluate_state_recursive_alpha_reduction_factor;
-        for next_player_move in UltTTTMCTSGame::<GC>::available_moves(state) {
-            let next_player_state =
-                UltTTTMCTSGame::apply_move(state, &next_player_move, game_cache);
-            let response_value = Self::evaluate_state_recursive(
-                &next_player_state,
-                game_cache,
-                heuristic_cache,
-                heuristic_config,
-                depth - 1,
-                next_player_alpha,
-            );
-            if response_value > worst_response {
-                worst_response = response_value;
-                if worst_response >= heuristic_config.evaluate_state_recursive_early_exit_threshold
-                {
-                    break;
-                }
-            }
-        }
-        alpha * base_heuristic + (1.0 - alpha) * (1.0 - worst_response)
     }
     fn evaluate_move(
         state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
@@ -388,13 +357,12 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         heuristic_config: &Self::Config,
     ) -> f32 {
         let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
-        UltTTTHeuristic::evaluate_state_recursive(
+        UltTTTHeuristic::evaluate_state(
             &new_state,
             game_cache,
             heuristic_cache,
+            None,
             heuristic_config,
-            heuristic_config.evaluate_state_recursive_depth(),
-            heuristic_config.evaluate_state_recursive_alpha(),
         )
     }
 }
@@ -813,10 +781,7 @@ where
             let child_index = *self.nodes[current_index]
                 .get_children()
                 .get(num_parent_children)
-                .expect(&format!(
-                    "No children found at node index: {}",
-                    current_index
-                ));
+                .expect("No children at current node");
             path.push(child_index);
             child_index
         };
@@ -1076,8 +1041,6 @@ struct BaseHeuristicConfig {
     progressive_widening_decay_rate: f32,
     early_cut_off_lower_bound: f32,
     early_cut_off_upper_bound: f32,
-    evaluate_state_recursive_depth: usize,
-    evaluate_state_recursive_alpha: f32,
 }
 impl Default for BaseHeuristicConfig {
     fn default() -> Self {
@@ -1086,8 +1049,6 @@ impl Default for BaseHeuristicConfig {
             progressive_widening_decay_rate: 0.95,
             early_cut_off_lower_bound: 0.05,
             early_cut_off_upper_bound: 0.95,
-            evaluate_state_recursive_depth: 0,
-            evaluate_state_recursive_alpha: 0.7,
         }
     }
 }
@@ -1103,12 +1064,6 @@ impl HeuristicConfig for BaseHeuristicConfig {
     }
     fn early_cut_off_upper_bound(&self) -> f32 {
         self.early_cut_off_upper_bound
-    }
-    fn evaluate_state_recursive_depth(&self) -> usize {
-        self.evaluate_state_recursive_depth
-    }
-    fn evaluate_state_recursive_alpha(&self) -> f32 {
-        self.evaluate_state_recursive_alpha
     }
 }
 struct NoHeuristic {}
@@ -1389,8 +1344,6 @@ trait HeuristicConfig {
     fn progressive_widening_decay_rate(&self) -> f32;
     fn early_cut_off_upper_bound(&self) -> f32;
     fn early_cut_off_lower_bound(&self) -> f32;
-    fn evaluate_state_recursive_depth(&self) -> usize;
-    fn evaluate_state_recursive_alpha(&self) -> f32;
 }
 trait Heuristic<G: MCTSGame> {
     type Cache: HeuristicCache<G::State, G::Move>;
@@ -1402,16 +1355,6 @@ trait Heuristic<G: MCTSGame> {
         perspective_player: Option<G::Player>,
         heuristic_config: &Self::Config,
     ) -> f32;
-    fn evaluate_state_recursive(
-        state: &G::State,
-        game_cache: &mut G::Cache,
-        heuristic_cache: &mut Self::Cache,
-        heuristic_config: &Self::Config,
-        _depth: usize,
-        _alpha: f32,
-    ) -> f32 {
-        Self::evaluate_state(state, game_cache, heuristic_cache, None, heuristic_config)
-    }
     fn evaluate_move(
         state: &G::State,
         mv: &G::Move,

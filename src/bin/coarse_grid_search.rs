@@ -15,6 +15,8 @@ use my_lib::my_tic_tac_toe::*;
 const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(995);
 const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
 
+type UltTTTExpandAll = ExpandAll<UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>>;
+
 #[derive(Clone, Copy, Debug)]
 struct FullConfig {
     mtcs: UltTTTMCTSConfig,
@@ -36,7 +38,7 @@ fn run_match(params: &FullConfig, heuristic_is_start_player: bool) -> f32 {
         UltTTTMCTSGameNoGameCache,
         DynamicC,
         CachedUTC,
-        ExpandAll<UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>>,
+        UltTTTExpandAll,
         NoHeuristic,
         DefaultSimulationPolicy,
     > = PlainMCTS::new(UltTTTMCTSConfig::default(), BaseHeuristicConfig::default());
