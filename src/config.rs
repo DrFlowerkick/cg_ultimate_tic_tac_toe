@@ -50,6 +50,12 @@ pub struct UltTTTHeuristicConfig {
 }
 
 impl HeuristicConfig for UltTTTHeuristicConfig {
+    fn progressive_widening_initial_threshold(&self) -> f32 {
+        self.base_config.progressive_widening_initial_threshold
+    }
+    fn progressive_widening_decay_rate(&self) -> f32 {
+        self.base_config.progressive_widening_decay_rate
+    }
     fn early_cut_off_lower_bound(&self) -> f32 {
         self.base_config.early_cut_off_lower_bound
     }
@@ -68,6 +74,8 @@ impl Default for UltTTTHeuristicConfig {
     fn default() -> Self {
         UltTTTHeuristicConfig {
             base_config: BaseHeuristicConfig {
+                progressive_widening_initial_threshold: 0.8,
+                progressive_widening_decay_rate: 0.95,
                 early_cut_off_lower_bound: 0.05,
                 early_cut_off_upper_bound: 0.95,
                 evaluate_state_recursive_depth: 0,

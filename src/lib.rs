@@ -149,7 +149,8 @@ pub type UltTTTMCTSGameWithGameCache = UltTTTMCTSGame<UltTTTGameCache>;
 pub type UltTTTMCTSGameNoGameCache = UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>;
 
 pub type HPWDefaultTTTWithGameCache = ProgressiveWidening<UltTTTMCTSGameWithGameCache>;
-pub type HPWDefaultTTTNoGameCache = HeuristicProgressiveWidening<UltTTTMCTSGameNoGameCache>;
+pub type HPWDefaultTTTNoGameCache =
+    HeuristicProgressiveWidening<UltTTTMCTSGameNoGameCache, UltTTTHeuristic>;
 
 pub struct UltTTTMCTSGame<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> {
     phantom: std::marker::PhantomData<GC>,

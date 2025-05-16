@@ -51,13 +51,14 @@
 [impl_items]
 include = [
     "add_child@impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
+    "allowed_children@impl<G:MCTSGame,H:Heuristic<G>> HeuristicProgressiveWidening<G,H>",
     "cell_weight",
     "count_me_cells",
+    "count_non_vacant_cells",
     "count_opp_cells",
     "evaluate@impl TicTacToeStatus",
     "execute_action",
     "expandable_moves@impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
-    "expandable_moves@impl<G:MCTSGame> BaseProgressiveWidening<G>",
     "get_cell",
     "get_cell_mut",
     "get_children",
@@ -78,7 +79,7 @@ include = [
     "set_cell",
     "set_cell_value",
     "set_current_player@impl UltTTT",
-    "should_expand@impl<G:MCTSGame> BaseProgressiveWidening<G>"
+    "threshold"
 ]
 exclude = [
     "get_cell_value@impl UltTTT"
@@ -107,10 +108,10 @@ include = [
     "impl<G,UP,UC,EP,H,SP> PlainMCTS<G,UP,UC,EP,H,SP> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,SP:SimulationPolicy<G,H>,",
     "impl<G,UP,UC,EP,H> MCTSNode<G> for PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
     "impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
-    "impl<G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for HeuristicProgressiveWidening<G>",
+    "impl<G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for HeuristicProgressiveWidening<G,H>",
+    "impl<G:MCTSGame,H:Heuristic<G>> HeuristicProgressiveWidening<G,H>",
     "impl<G:MCTSGame,H:Heuristic<G>> SimulationPolicy<G,H> for HeuristicCutoff",
     "impl<G:MCTSGame,UP:UCTPolicy<G>> UTCCache<G,UP> for CachedUTC",
-    "impl<G:MCTSGame> BaseProgressiveWidening<G>",
     "impl<G:MCTSGame> Heuristic<G> for NoHeuristic",
     "impl<G:MCTSGame> UCTPolicy<G> for DynamicC",
     "impl<GC:UltTTTGameCacheTrait+GameCache<UltTTT,UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>> for UltTTTHeuristic",
@@ -133,5 +134,6 @@ exclude = [
     "impl<G:MCTSGame,H:Heuristic<G>> ExpansionPolicy<G,H> for ProgressiveWidening<G>",
     "impl<G:MCTSGame,H:Heuristic<G>> SimulationPolicy<G,H> for DefaultSimulationPolicy",
     "impl<G:MCTSGame,UP:UCTPolicy<G>> UTCCache<G,UP> for NoUTCCache",
+    "impl<G:MCTSGame> ProgressiveWidening<G>",
     "impl<G:MCTSGame> UCTPolicy<G> for StaticC"
 ]
