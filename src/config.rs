@@ -44,8 +44,6 @@ pub struct UltTTTHeuristicConfig {
     pub meta_cell_small_threat: f32,
     pub constraint_factor: f32,
     pub free_choice_constraint_factor: f32,
-    pub evaluate_state_recursive_alpha_reduction_factor: f32,
-    pub evaluate_state_recursive_early_exit_threshold: f32,
     pub direct_loss_value: f32,
 }
 
@@ -62,12 +60,6 @@ impl HeuristicConfig for UltTTTHeuristicConfig {
     fn early_cut_off_upper_bound(&self) -> f32 {
         self.base_config.early_cut_off_upper_bound
     }
-    fn evaluate_state_recursive_depth(&self) -> usize {
-        self.base_config.evaluate_state_recursive_depth
-    }
-    fn evaluate_state_recursive_alpha(&self) -> f32 {
-        self.base_config.evaluate_state_recursive_alpha
-    }
 }
 
 impl Default for UltTTTHeuristicConfig {
@@ -78,8 +70,6 @@ impl Default for UltTTTHeuristicConfig {
                 progressive_widening_decay_rate: 0.95,
                 early_cut_off_lower_bound: 0.05,
                 early_cut_off_upper_bound: 0.95,
-                evaluate_state_recursive_depth: 0,
-                evaluate_state_recursive_alpha: 0.7,
             },
             meta_weight_base: 0.3,
             meta_weight_progress_offset: 0.4,
@@ -87,8 +77,6 @@ impl Default for UltTTTHeuristicConfig {
             meta_cell_small_threat: 1.5,
             constraint_factor: 1.5,
             free_choice_constraint_factor: 1.5,
-            evaluate_state_recursive_alpha_reduction_factor: 0.9,
-            evaluate_state_recursive_early_exit_threshold: 0.95,
             direct_loss_value: 0.01,
         }
     }

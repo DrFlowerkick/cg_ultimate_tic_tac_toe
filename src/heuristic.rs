@@ -151,53 +151,6 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         score
     }
 
-    fn evaluate_state_recursive(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
-        heuristic_cache: &mut Self::Cache,
-        heuristic_config: &Self::Config,
-        depth: usize,
-        alpha: f32,
-    ) -> f32 {
-        let base_heuristic =
-            Self::evaluate_state(state, game_cache, heuristic_cache, None, heuristic_config);
-
-        if depth == 0 || UltTTTMCTSGame::evaluate(state, game_cache).is_some() {
-            return base_heuristic;
-        }
-
-        let mut worst_response = f32::NEG_INFINITY;
-        let next_player_alpha = alpha
-            - (alpha - 0.5) * heuristic_config.evaluate_state_recursive_alpha_reduction_factor;
-        // If no constraint on next move, this will be many moves to consider.
-        // Therefore we use early exit to reduce calculation time.
-        for next_player_move in UltTTTMCTSGame::<GC>::available_moves(state) {
-            let next_player_state =
-                UltTTTMCTSGame::apply_move(state, &next_player_move, game_cache);
-
-            let response_value = Self::evaluate_state_recursive(
-                &next_player_state,
-                game_cache,
-                heuristic_cache,
-                heuristic_config,
-                depth - 1,
-                next_player_alpha,
-            );
-
-            if response_value > worst_response {
-                worst_response = response_value;
-                // early exit, because next player does have guaranteed win
-                if worst_response >= heuristic_config.evaluate_state_recursive_early_exit_threshold
-                {
-                    break;
-                }
-            }
-        }
-
-        // combine base heuristic with worst case response
-        alpha * base_heuristic + (1.0 - alpha) * (1.0 - worst_response)
-    }
-
     fn evaluate_move(
         state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
         mv: &<UltTTTMCTSGame<GC> as MCTSGame>::Move,
@@ -206,13 +159,12 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         heuristic_config: &Self::Config,
     ) -> f32 {
         let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
-        UltTTTHeuristic::evaluate_state_recursive(
+        UltTTTHeuristic::evaluate_state(
             &new_state,
             game_cache,
             heuristic_cache,
+            None,
             heuristic_config,
-            heuristic_config.evaluate_state_recursive_depth(),
-            heuristic_config.evaluate_state_recursive_alpha(),
         )
     }
 }
