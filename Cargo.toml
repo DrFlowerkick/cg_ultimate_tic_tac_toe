@@ -10,3 +10,4 @@ rust-version = "1.70"
 rand = "0.8.5"
 my_lib = { path = "../../mylib/" }
 rayon = "1.10.0"
+statrs = "0.18.0"

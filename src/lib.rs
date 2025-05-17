@@ -9,6 +9,8 @@ pub use caching::*;
 pub mod heuristic;
 pub use heuristic::*;
 
+pub mod utilities;
+
 use my_lib::my_map_3x3::*;
 use my_lib::my_monte_carlo_tree_search::*;
 use my_lib::my_tic_tac_toe::*;

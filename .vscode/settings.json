@@ -5,6 +5,7 @@
         "mtcs",
         "mylib",
         "repr",
+        "statrs",
         "TTTMCTS",
         "UltTTTMCTSGame",
         "usize"

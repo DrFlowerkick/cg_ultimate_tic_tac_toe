@@ -6,100 +6,10 @@ use std::io::{BufWriter, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::*;
-use my_lib::my_monte_carlo_tree_search::*;
-use my_lib::my_tic_tac_toe::*;
 
-const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(995);
-const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
-
-type UltTTTExpandAll = ExpandAll<UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>>;
-
-#[derive(Clone, Copy, Debug)]
-struct FullConfig {
-    mtcs: UltTTTMCTSConfig,
-    heuristic: UltTTTHeuristicConfig,
-}
-
-fn run_match(params: &FullConfig, heuristic_is_start_player: bool) -> f32 {
-    let mut first_mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGameNoGameCache,
-        DynamicC,
-        CachedUTC,
-        HPWDefaultTTTNoGameCache,
-        UltTTTHeuristic,
-        HeuristicCutoff,
-    > = PlainMCTS::new(params.mtcs, params.heuristic);
-    let mut first_ult_ttt_game_data = UltTTT::new();
-    let mut first_time_out = TIME_OUT_FIRST_TURN;
-    let mut second_mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGameNoGameCache,
-        DynamicC,
-        CachedUTC,
-        UltTTTExpandAll,
-        NoHeuristic,
-        DefaultSimulationPolicy,
-    > = PlainMCTS::new(UltTTTMCTSConfig::default(), BaseHeuristicConfig::default());
-    let mut second_ult_ttt_game_data = UltTTT::new();
-    let mut second_time_out = TIME_OUT_FIRST_TURN;
-
-    let mut first = if heuristic_is_start_player {
-        first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
-        second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
-        true
-    } else {
-        first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
-        second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
-        false
-    };
-
-    while UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
-        .is_none()
-    {
-        if first {
-            let start = Instant::now();
-            first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data);
-            while start.elapsed() < first_time_out {
-                first_mcts_ult_ttt.iterate();
-            }
-            first_time_out = TIME_OUT_SUCCESSIVE_TURNS;
-            let selected_move = *first_mcts_ult_ttt.select_move();
-            first_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
-                &first_ult_ttt_game_data,
-                &selected_move,
-                &mut first_mcts_ult_ttt.game_cache,
-            );
-            second_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
-                &second_ult_ttt_game_data,
-                &selected_move,
-                &mut second_mcts_ult_ttt.game_cache,
-            );
-            first = false;
-        } else {
-            let start = Instant::now();
-            second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data);
-            while start.elapsed() < second_time_out {
-                second_mcts_ult_ttt.iterate();
-            }
-            second_time_out = TIME_OUT_SUCCESSIVE_TURNS;
-            let selected_move = *second_mcts_ult_ttt.select_move();
-            second_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
-                &second_ult_ttt_game_data,
-                &selected_move,
-                &mut second_mcts_ult_ttt.game_cache,
-            );
-            first_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
-                &first_ult_ttt_game_data,
-                &selected_move,
-                &mut first_mcts_ult_ttt.game_cache,
-            );
-            first = true;
-        }
-    }
-    UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache).unwrap()
-}
+use cg_ultimate_tic_tac_toe::utilities::*;
 
 fn main() {
     // config parameter sets
@@ -139,21 +49,22 @@ fn main() {
                                 direct_loss_value_vals
                                     .iter()
                                     .for_each(|&direct_loss_value| {
-                                        let mut params = FullConfig {
-                                            mtcs: UltTTTMCTSConfig::default(),
-                                            heuristic: UltTTTHeuristicConfig::default(),
+                                        let config = Config {
+                                            heuristic: UltTTTHeuristicConfig {
+                                                meta_weight_base,
+                                                constraint_factor,
+                                                free_choice_constraint_factor: constraint_factor,
+                                                meta_cell_big_threat,
+                                                meta_cell_small_threat,
+                                                direct_loss_value,
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
                                         };
-                                        params.heuristic.meta_weight_base = meta_weight_base;
-                                        params.heuristic.constraint_factor = constraint_factor;
-                                        params.heuristic.free_choice_constraint_factor =
-                                            constraint_factor;
-                                        params.heuristic.meta_cell_big_threat = meta_cell_big_threat;
-                                        params.heuristic.meta_cell_small_threat = meta_cell_small_threat;
-                                        params.heuristic.direct_loss_value = direct_loss_value;
 
                                         let mut total_score: f32 = 0.0;
                                         (0..num_matches).for_each(|match_counter| {
-                                            total_score += run_match(&params, match_counter % 2 == 0);
+                                            total_score += run_match(config, match_counter % 2 == 0);
                                             let progress = progress_counter.fetch_add(1, Ordering::SeqCst) + 1;
                                             if progress % 10 == 0 {
                                                 println!("[{}/{}] progress...", progress, total_num_of_matches);
@@ -163,13 +74,13 @@ fn main() {
                                         let avg_score = total_score / num_matches as f32;
 
                                         println!("Config: meta_weight_base = {:.2}, constraint_factor = {:.2}, meta_cell_big_threat = {:.2}, direct_loss_value = {:.2} → Avg Score: {:.3}",
-                                            params.heuristic.meta_weight_base,
-                                            params.heuristic.constraint_factor,
-                                            params.heuristic.meta_cell_big_threat,
-                                            params.heuristic.direct_loss_value,
+                                            config.heuristic.meta_weight_base,
+                                            config.heuristic.constraint_factor,
+                                            config.heuristic.meta_cell_big_threat,
+                                            config.heuristic.direct_loss_value,
                                             avg_score);
 
-                                        results.lock().unwrap().push((params, avg_score));
+                                        results.lock().unwrap().push((config.heuristic, avg_score));
                                     });
                                 });
                         });
@@ -181,7 +92,7 @@ fn main() {
     save_results(&results, "parallel_grid_search_results.csv");
 }
 
-fn save_results(results: &Vec<(FullConfig, f32)>, filename: &str) {
+fn save_results(results: &Vec<(UltTTTHeuristicConfig, f32)>, filename: &str) {
     let file = File::create(filename).expect("Unable to create file");
     let mut writer = BufWriter::new(file);
 
@@ -191,14 +102,14 @@ fn save_results(results: &Vec<(FullConfig, f32)>, filename: &str) {
     )
     .unwrap();
 
-    for (params, avg_score) in results {
+    for (heuristic_config, avg_score) in results {
         writeln!(
             writer,
             "{},{},{},{},{}",
-            params.heuristic.meta_weight_base,
-            params.heuristic.constraint_factor,
-            params.heuristic.meta_cell_big_threat,
-            params.heuristic.direct_loss_value,
+            heuristic_config.meta_weight_base,
+            heuristic_config.constraint_factor,
+            heuristic_config.meta_cell_big_threat,
+            heuristic_config.direct_loss_value,
             avg_score
         )
         .unwrap();
