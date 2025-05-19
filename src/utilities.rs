@@ -1,14 +1,72 @@
 // utilities for optimization
 
 use super::*;
+use my_lib::my_optimizer::{update_progress, increment_progress_counter_by, ObjectiveFunction, ParamBound};
 use std::time::{Duration, Instant};
+use tracing::{span, Level};
+use uuid::Uuid;
 
 const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(995);
 const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
 
 type UltTTTExpandAll = ExpandAll<UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>>;
 
-pub fn run_match(config: Config, heuristic_is_start_player: bool) -> f32 {
+pub struct EarlyBreakOff {
+    pub num_initial_matches: usize,
+    pub score_threshold: f64,
+}
+
+pub struct UltTTTObjectiveFunction<CH: ConfigHandler> {
+    pub num_matches: usize,
+    pub early_break_off: Option<EarlyBreakOff>,
+    pub progress_step_size: usize,
+    pub estimated_num_of_steps: usize,
+    pub phantom: std::marker::PhantomData<CH>,
+}
+
+impl<CH: ConfigHandler> ObjectiveFunction for UltTTTObjectiveFunction<CH> {
+    fn evaluate(&self, params: &[f64]) -> f64 {
+        let eval_id = Uuid::new_v4().to_string();
+        let config = CH::params_to_config(params);
+
+        let span_search =
+            span!(Level::DEBUG, "UltTTT Objective Function", eval_id = eval_id, config = ?config);
+        let _enter = span_search.enter();
+
+        let mut sum_score: f64 = 0.0;
+        let mut num_early_matches = 0;
+        if let Some(ref ebo) = self.early_break_off {
+            sum_score += (0..ebo.num_initial_matches)
+                .map(|i| {
+                    update_progress(Some(self.estimated_num_of_steps), self.progress_step_size);
+                    run_match(config, i % 2 == 0)
+                })
+                .sum::<f64>();
+
+            let early_score = sum_score / (ebo.num_initial_matches as f64);
+            if early_score < ebo.score_threshold {
+                increment_progress_counter_by(self.num_matches);
+                tracing::debug!(eval_id, early_score, "Evaluation early cut-off.");
+                return early_score;
+            }
+            num_early_matches = ebo.num_initial_matches;
+        }
+
+        sum_score += (0..self.num_matches)
+            .map(|i| {
+                update_progress(Some(self.estimated_num_of_steps), self.progress_step_size);
+                run_match(config, i % 2 == 0)
+            })
+            .sum::<f64>();
+        let score = sum_score / (self.num_matches + num_early_matches) as f64;
+
+        tracing::debug!(eval_id, score, "Evaluation completed.");
+
+        score
+    }
+}
+
+pub fn run_match(config: Config, heuristic_is_start_player: bool) -> f64 {
     let mut first_mcts_ult_ttt: PlainMCTS<
         UltTTTMCTSGameNoGameCache,
         DynamicC,
@@ -84,6 +142,7 @@ pub fn run_match(config: Config, heuristic_is_start_player: bool) -> f32 {
         }
     }
     UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache).unwrap()
+        as f64
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -94,6 +153,12 @@ pub struct Config {
 
 impl From<Vec<f64>> for Config {
     fn from(value: Vec<f64>) -> Self {
+        Config::from(&value[..])
+    }
+}
+
+impl From<&[f64]> for Config {
+    fn from(value: &[f64]) -> Self {
         Config {
             mcts: UltTTTMCTSConfig {
                 base_config: BaseConfig {
@@ -222,4 +287,23 @@ impl Config {
             },
         }
     }
+    pub fn param_bounds() -> Vec<ParamBound> {
+        let lower_bounds: Vec<f64> = Config::lower_bounds().into();
+        let upper_bounds: Vec<f64> = Config::upper_bounds().into();
+        lower_bounds
+            .into_iter()
+            .zip(upper_bounds.into_iter())
+            .map(|(min, max)| ParamBound::MinMax(min, max))
+            .collect()
+    }
 }
+
+pub trait ConfigHandler {
+    fn params_to_config(params: &[f64]) -> Config {
+        params.into()
+    }
+}
+
+pub struct DefaultConfigHandler {}
+
+impl ConfigHandler for DefaultConfigHandler {}

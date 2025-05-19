@@ -1,6 +1,6 @@
 [package]
 name = "cg_ultimate_tic_tac_toe"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.70"
 
@@ -11,3 +11,5 @@ rand = "0.8.5"
 my_lib = { path = "../../mylib/" }
 rayon = "1.10.0"
 statrs = "0.18.0"
+tracing = "0.1.41"
+uuid = { version = "1", features = ["v4"] }
