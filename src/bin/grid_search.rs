@@ -99,10 +99,9 @@ fn main() {
 
     let population_size = 20;
 
-    let population =
-        grid_configuration.explore(&grid_evaluation, &param_bounds, population_size);
+    let population = grid_configuration.explore(&grid_evaluation, &param_bounds, population_size);
     let best_config: Config = population.best().expect("Empty population").params[..].into();
-    
+
     info!(
         "Finished UltTTT Grid Search with best candidate: {:?}",
         best_config

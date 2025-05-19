@@ -37,7 +37,8 @@ fn main() {
             score_threshold: 0.4,
         }),
         progress_step_size: 10,
-        estimated_num_of_steps: random_search_configuration.get_estimate_of_cycles(&param_bounds) * 100, // 100 matches
+        estimated_num_of_steps: random_search_configuration.get_estimate_of_cycles(&param_bounds)
+            * 100, // 100 matches
         phantom: std::marker::PhantomData,
     };
 
@@ -49,7 +50,7 @@ fn main() {
         population_size,
     );
     let best_config: Config = population.best().expect("Empty population").params[..].into();
-    
+
     info!(
         "Finished UltTTT Random Search with best candidate: {:?}",
         best_config

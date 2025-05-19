@@ -1,7 +1,9 @@
 // utilities for optimization
 
 use super::*;
-use my_lib::my_optimizer::{update_progress, increment_progress_counter_by, ObjectiveFunction, ParamBound};
+use my_lib::my_optimizer::{
+    increment_progress_counter_by, update_progress, ObjectiveFunction, ParamBound,
+};
 use std::time::{Duration, Instant};
 use tracing::{span, Level};
 use uuid::Uuid;
