@@ -80,10 +80,17 @@ fn main() {
         ParamBound::List([0.0, 0.005, 0.01, 0.025].into()), // direct_loss_value
     ];
 
+    let filename = "grid_search_results.csv";
+
     let grid_configuration = GridSearch {
         steps_per_param: 0, // only list ParamBound
         channel_capacity: 1_000,
         worker_threads: 4,
+        population_saver: Some(PopulationSaver {
+            file_path: filename.into(),
+            step_size: 10,
+            precision: 3,
+        }),
     };
 
     let grid_evaluation = UltTTTObjectiveFunction::<GridSearchConfigHandler> {
@@ -107,9 +114,5 @@ fn main() {
         best_config
     );
 
-    save_population(
-        &population,
-        &Config::parameter_names(),
-        "grid_search_results.csv",
-    );
+    save_population(&population, &Config::parameter_names(), filename, 3);
 }

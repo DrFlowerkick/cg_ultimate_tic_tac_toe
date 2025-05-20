@@ -47,6 +47,11 @@ fn main() {
             exponent: 2.0,
         },
         initial_population: None,
+        population_saver: Some(PopulationSaver {
+            file_path: filename.into(),
+            step_size: 10,
+            precision: 3,
+        }),
     };
 
     let evolutionary_optimizer_evaluation = UltTTTObjectiveFunction::<DefaultConfigHandler> {
@@ -78,5 +83,6 @@ fn main() {
         &population,
         &Config::parameter_names(),
         "evolutionary_optimizer_results.csv",
+        3,
     );
 }

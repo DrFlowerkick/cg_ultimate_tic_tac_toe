@@ -28,13 +28,23 @@ fn main() {
 
     let param_bounds = Config::param_bounds();
 
-    let random_search_configuration = RandomSearch { iterations: 5_000 };
+    let filename = "random_search_results.csv";
+
+    let random_search_configuration = RandomSearch {
+        iterations: 5_000,
+
+        population_saver: Some(PopulationSaver {
+            file_path: filename.into(),
+            step_size: 10,
+            precision: 3,
+        }),
+    };
 
     let random_search_evaluation = UltTTTObjectiveFunction::<DefaultConfigHandler> {
         num_matches: 90,
         early_break_off: Some(EarlyBreakOff {
             num_initial_matches: 10,
-            score_threshold: 0.4,
+            score_threshold: 0.5,
         }),
         progress_step_size: 10,
         estimated_num_of_steps: random_search_configuration.get_estimate_of_cycles(&param_bounds)
@@ -56,9 +66,5 @@ fn main() {
         best_config
     );
 
-    save_population(
-        &population,
-        &Config::parameter_names(),
-        "random_search_results.csv",
-    );
+    save_population(&population, &Config::parameter_names(), filename, 3);
 }

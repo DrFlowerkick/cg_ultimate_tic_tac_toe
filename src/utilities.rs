@@ -284,7 +284,7 @@ impl Config {
                 meta_cell_big_threat: 4.0,
                 meta_cell_small_threat: 1.5,
                 constraint_factor: 2.0,
-                free_choice_constraint_factor: 1.0,
+                free_choice_constraint_factor: 2.0,
                 direct_loss_value: 0.025,
             },
         }
