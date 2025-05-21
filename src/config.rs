@@ -7,6 +7,19 @@ pub struct UltTTTMCTSConfig {
     pub base_config: BaseConfig,
 }
 
+impl UltTTTMCTSConfig {
+    pub fn optimized() -> Self {
+        UltTTTMCTSConfig {
+            base_config: BaseConfig {
+                exploration_constant: 1.134,
+                progressive_widening_constant: 1.933,
+                progressive_widening_exponent: 0.455,
+                early_cut_off_depth: 18,
+            },
+        }
+    }
+}
+
 impl Default for UltTTTMCTSConfig {
     fn default() -> Self {
         UltTTTMCTSConfig {
@@ -45,6 +58,26 @@ pub struct UltTTTHeuristicConfig {
     pub constraint_factor: f32,
     pub free_choice_constraint_factor: f32,
     pub direct_loss_value: f32,
+}
+
+impl UltTTTHeuristicConfig {
+    pub fn optimized() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                progressive_widening_initial_threshold: 0.695,
+                progressive_widening_decay_rate: 0.928,
+                early_cut_off_lower_bound: 0.034,
+                early_cut_off_upper_bound: 0.914,
+            },
+            meta_weight_base: 0.341,
+            meta_weight_progress_offset: 0.175,
+            meta_cell_big_threat: 3.946,
+            meta_cell_small_threat: 1.078,
+            constraint_factor: 1.085,
+            free_choice_constraint_factor: 1.704,
+            direct_loss_value: 0.023,
+        }
+    }
 }
 
 impl HeuristicConfig for UltTTTHeuristicConfig {

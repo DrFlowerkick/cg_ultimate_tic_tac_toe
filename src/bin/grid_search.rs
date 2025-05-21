@@ -31,54 +31,21 @@ fn main() {
 
     info!("Starting UltTTT Grid Search");
 
-    let default_config = Config::default();
-    let param_bounds = vec![
-        ParamBound::Static(default_config.mcts.base_config.exploration_constant as f64),
-        ParamBound::Static(
-            default_config
-                .mcts
-                .base_config
-                .progressive_widening_constant as f64,
-        ),
-        ParamBound::Static(
-            default_config
-                .mcts
-                .base_config
-                .progressive_widening_exponent as f64,
-        ),
-        ParamBound::Static(default_config.mcts.base_config.early_cut_off_depth as f64),
-        ParamBound::Static(
-            default_config
-                .heuristic
-                .base_config
-                .progressive_widening_initial_threshold as f64,
-        ),
-        ParamBound::Static(
-            default_config
-                .heuristic
-                .base_config
-                .progressive_widening_decay_rate as f64,
-        ),
-        ParamBound::Static(
-            default_config
-                .heuristic
-                .base_config
-                .early_cut_off_lower_bound as f64,
-        ),
-        ParamBound::Static(
-            default_config
-                .heuristic
-                .base_config
-                .early_cut_off_upper_bound as f64,
-        ),
-        ParamBound::List([0.2, 0.3, 0.5].into()), // meta_weight_base
-        ParamBound::Static(default_config.heuristic.meta_weight_progress_offset as f64),
-        ParamBound::List([2.0, 3.0, 4.0].into()), // meta_cell_big_threat
-        ParamBound::List([0.5, 1.0, 1.5].into()), // meta_cell_small_threat
-        ParamBound::List([1.0, 1.5, 2.0].into()), // constraint_factor
-        ParamBound::Static(default_config.heuristic.free_choice_constraint_factor as f64),
-        ParamBound::List([0.0, 0.005, 0.01, 0.025].into()), // direct_loss_value
+    let mut param_bounds = Config::param_bounds();
+    let grid_list_config = vec![
+        ("meta_weight_base", vec![0.2, 0.3, 0.5]),
+        ("meta_cell_big_threat", vec![2.0, 3.0, 4.0]),
+        ("meta_cell_small_threat", vec![0.5, 1.0, 1.5]),
+        ("constraint_factor", vec![1.0, 1.5, 2.0]),
+        ("direct_loss_value", vec![0.0, 0.005, 0.01, 0.025]),
     ];
+    for (name, list) in grid_list_config {
+        let name_index = param_bounds
+            .iter()
+            .position(|pb| pb.name == name)
+            .expect("Unknown parameter name.");
+        param_bounds.get_mut(name_index).unwrap().bound = ParamBound::List(list);
+    }
 
     let filename = "grid_search_results.csv";
 

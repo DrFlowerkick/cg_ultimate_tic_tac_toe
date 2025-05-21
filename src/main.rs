@@ -37,8 +37,8 @@ fn main() {
         UltTTTHeuristic,
         HeuristicCutoff,
     > = PlainMCTS::new(
-        UltTTTMCTSConfig::default(),
-        UltTTTHeuristicConfig::default(),
+        UltTTTMCTSConfig::optimized(),
+        UltTTTHeuristicConfig::optimized(),
     );
 
     // start parallel thread for input of codingame

@@ -49,6 +49,9 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
             None => {
+                // ToDo: if status map contains won cells and vacant cells cannot change win status of player with
+                // most won cells, than this is a win for player of most won cells. Try to get this in heuristic.
+
                 // mini board threats, weighted with cell_weight, meta factor and constraint factor
                 let mut my_threat_sum = 0.0;
                 let mut opp_threat_sum = 0.0;

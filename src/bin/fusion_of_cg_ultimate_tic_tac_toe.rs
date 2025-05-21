@@ -21,8 +21,8 @@ fn main() {
         UltTTTHeuristic,
         HeuristicCutoff,
     > = PlainMCTS::new(
-        UltTTTMCTSConfig::default(),
-        UltTTTHeuristicConfig::default(),
+        UltTTTMCTSConfig::optimized(),
+        UltTTTHeuristicConfig::optimized(),
     );
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || loop {
@@ -103,6 +103,18 @@ fn main() {
 struct UltTTTMCTSConfig {
     base_config: BaseConfig,
 }
+impl UltTTTMCTSConfig {
+    fn optimized() -> Self {
+        UltTTTMCTSConfig {
+            base_config: BaseConfig {
+                exploration_constant: 1.134,
+                progressive_widening_constant: 1.933,
+                progressive_widening_exponent: 0.455,
+                early_cut_off_depth: 18,
+            },
+        }
+    }
+}
 impl Default for UltTTTMCTSConfig {
     fn default() -> Self {
         UltTTTMCTSConfig {
@@ -139,6 +151,25 @@ struct UltTTTHeuristicConfig {
     constraint_factor: f32,
     free_choice_constraint_factor: f32,
     direct_loss_value: f32,
+}
+impl UltTTTHeuristicConfig {
+    fn optimized() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                progressive_widening_initial_threshold: 0.695,
+                progressive_widening_decay_rate: 0.928,
+                early_cut_off_lower_bound: 0.034,
+                early_cut_off_upper_bound: 0.914,
+            },
+            meta_weight_base: 0.341,
+            meta_weight_progress_offset: 0.175,
+            meta_cell_big_threat: 3.946,
+            meta_cell_small_threat: 1.078,
+            constraint_factor: 1.085,
+            free_choice_constraint_factor: 1.704,
+            direct_loss_value: 0.023,
+        }
+    }
 }
 impl HeuristicConfig for UltTTTHeuristicConfig {
     fn progressive_widening_initial_threshold(&self) -> f32 {

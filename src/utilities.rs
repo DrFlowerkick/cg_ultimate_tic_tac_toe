@@ -2,7 +2,7 @@
 
 use super::*;
 use my_lib::my_optimizer::{
-    increment_progress_counter_by, update_progress, ObjectiveFunction, ParamBound,
+    increment_progress_counter_by, update_progress, ObjectiveFunction, ParamBound, ParamDescriptor,
 };
 use std::time::{Duration, Instant};
 use tracing::{span, Level};
@@ -289,13 +289,17 @@ impl Config {
             },
         }
     }
-    pub fn param_bounds() -> Vec<ParamBound> {
+    pub fn param_bounds() -> Vec<ParamDescriptor> {
         let lower_bounds: Vec<f64> = Config::lower_bounds().into();
         let upper_bounds: Vec<f64> = Config::upper_bounds().into();
         lower_bounds
             .into_iter()
             .zip(upper_bounds.into_iter())
-            .map(|(min, max)| ParamBound::MinMax(min, max))
+            .zip(Config::parameter_names().iter())
+            .map(|((min, max), name)| ParamDescriptor {
+                name: name.to_owned(),
+                bound: ParamBound::MinMax(min, max),
+            })
             .collect()
     }
 }

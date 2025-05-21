@@ -33,7 +33,7 @@ fn main() {
         panic!("Failed to load population from '{}'.", filename);
     };
     assert_eq!(param_names, Config::parameter_names());
-    let population_size = initial_population.capacity;
+    let population_size = initial_population.capacity();
 
     let evolutionary_optimizer_configuration = EvolutionaryOptimizer::<ExponentialSchedule> {
         generations: 100,
@@ -46,7 +46,7 @@ fn main() {
             end: 0.05,
             exponent: 2.0,
         },
-        initial_population: None,
+        initial_population,
         population_saver: Some(PopulationSaver {
             file_path: filename.into(),
             step_size: 10,
