@@ -5,6 +5,12 @@ use my_lib::my_optimizer::*;
 use tracing::{info, span, Level};
 
 fn main() {
+    if let Err(err) = run() {
+        eprintln!("Error occurred: {:?}", err);
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     // enable tracing
     let _log_guard = TracingConfig {
         default_level: "debug",
@@ -33,6 +39,7 @@ fn main() {
         panic!("Failed to load population from '{}'.", filename);
     };
     assert_eq!(param_names, Config::parameter_names());
+    let filename = "evolutionary_optimizer_results.csv";
     let population_size = initial_population.capacity();
 
     let evolutionary_optimizer_configuration = EvolutionaryOptimizer::<ExponentialSchedule> {
@@ -54,7 +61,7 @@ fn main() {
         }),
     };
 
-    let evolutionary_optimizer_evaluation = UltTTTObjectiveFunction::<DefaultConfigHandler> {
+    let evolutionary_optimizer_evaluation = UltTTTObjectiveFunction {
         num_matches: 90,
         early_break_off: Some(EarlyBreakOff {
             num_initial_matches: 10,
@@ -64,15 +71,14 @@ fn main() {
         estimated_num_of_steps: evolutionary_optimizer_configuration
             .get_estimate_of_cycles(&param_bounds)
             * 100, // 100 matches
-        phantom: std::marker::PhantomData,
     };
 
     let population = evolutionary_optimizer_configuration.optimize(
         &evolutionary_optimizer_evaluation,
         &param_bounds,
         population_size,
-    );
-    let best_config: Config = population.best().expect("Empty population").params[..].into();
+    )?;
+    let best_config: Config = population.best().expect("Empty population").params[..].try_into()?;
 
     info!(
         "Finished UltTTT Evolutionary Optimize with best candidate: {:?}",
@@ -85,4 +91,5 @@ fn main() {
         "evolutionary_optimizer_results.csv",
         3,
     );
+    Ok(())
 }

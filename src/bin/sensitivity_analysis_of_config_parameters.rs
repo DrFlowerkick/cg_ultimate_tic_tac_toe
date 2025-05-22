@@ -23,7 +23,7 @@ fn sensitivity_analysis(
     param_index: usize,
     steps: usize,
     matches_per_step: usize,
-) {
+) -> anyhow::Result<()> {
     let mut config_vec: Vec<f64> = config.into();
     let min_value = <Vec<f64>>::from(lower_bound)[param_index];
     let max_value = <Vec<f64>>::from(upper_bound)[param_index];
@@ -37,7 +37,7 @@ fn sensitivity_analysis(
         let param_value = min_value + (max_value - min_value) * step as f64 / steps as f64;
         config_vec[param_index] = param_value;
 
-        let test_params = config_vec.clone().into();
+        let test_params = (&config_vec[..]).try_into()?;
 
         let scores = run_matches(test_params, matches_per_step);
         let mean = scores.clone().mean();
@@ -49,9 +49,10 @@ fn sensitivity_analysis(
         );
     }
     println!();
+    Ok(())
 }
 
-fn main() {
+fn run() -> anyhow::Result<()> {
     for (param_index, parameter) in Config::parameter_names().iter().enumerate() {
         sensitivity_analysis(
             Config::default(),
@@ -61,6 +62,13 @@ fn main() {
             param_index,
             10, // 10 steps from lower bound to upper bound -> 11 variations
             30, // 30 matches per variation should be enough
-        );
+        )?;
+    }
+    Ok(())
+}
+
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("Error occurred: {:?}", err);
     }
 }

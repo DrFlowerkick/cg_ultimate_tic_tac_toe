@@ -13,3 +13,4 @@ rayon = "1.10.0"
 statrs = "0.18.0"
 tracing = "0.1.41"
 uuid = { version = "1", features = ["v4"] }
+anyhow = "1.0.98"

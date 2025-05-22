@@ -18,21 +18,25 @@ pub struct EarlyBreakOff {
     pub score_threshold: f64,
 }
 
-pub struct UltTTTObjectiveFunction<CH: ConfigHandler> {
+pub struct UltTTTObjectiveFunction {
     pub num_matches: usize,
     pub early_break_off: Option<EarlyBreakOff>,
     pub progress_step_size: usize,
     pub estimated_num_of_steps: usize,
-    pub phantom: std::marker::PhantomData<CH>,
 }
 
-impl<CH: ConfigHandler> ObjectiveFunction for UltTTTObjectiveFunction<CH> {
-    fn evaluate(&self, params: &[f64]) -> f64 {
-        let eval_id = Uuid::new_v4().to_string();
-        let config = CH::params_to_config(params);
+impl ObjectiveFunction for UltTTTObjectiveFunction {
+    type Config = Config;
 
-        let span_search =
-            span!(Level::DEBUG, "UltTTT Objective Function", eval_id = eval_id, config = ?config);
+    fn evaluate(&self, config: Config) -> anyhow::Result<f64> {
+        let eval_id = Uuid::new_v4().to_string();
+
+        let span_search = span!(
+            Level::DEBUG,
+            "UltTTT Objective Function",
+            eval_id = eval_id,
+            ?config
+        );
         let _enter = span_search.enter();
 
         let mut sum_score: f64 = 0.0;
@@ -49,7 +53,7 @@ impl<CH: ConfigHandler> ObjectiveFunction for UltTTTObjectiveFunction<CH> {
             if early_score < ebo.score_threshold {
                 increment_progress_counter_by(self.num_matches);
                 tracing::debug!(eval_id, early_score, "Evaluation early cut-off.");
-                return early_score;
+                return Ok(early_score);
             }
             num_early_matches = ebo.num_initial_matches;
         }
@@ -64,7 +68,7 @@ impl<CH: ConfigHandler> ObjectiveFunction for UltTTTObjectiveFunction<CH> {
 
         tracing::debug!(eval_id, score, "Evaluation completed.");
 
-        score
+        Ok(score)
     }
 }
 
@@ -153,7 +157,42 @@ pub struct Config {
     pub heuristic: UltTTTHeuristicConfig,
 }
 
-impl From<Vec<f64>> for Config {
+impl TryFrom<&[f64]> for Config {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &[f64]) -> Result<Self, Self::Error> {
+        if value.len() != 15 {
+            return Err(anyhow::anyhow!("Wrong number of parameters"));
+        }
+        Ok(Config {
+            mcts: UltTTTMCTSConfig {
+                base_config: BaseConfig {
+                    exploration_constant: value[0] as f32,
+                    progressive_widening_constant: value[1] as f32,
+                    progressive_widening_exponent: value[2] as f32,
+                    early_cut_off_depth: value[3].round() as usize,
+                },
+            },
+            heuristic: UltTTTHeuristicConfig {
+                base_config: BaseHeuristicConfig {
+                    progressive_widening_initial_threshold: value[4] as f32,
+                    progressive_widening_decay_rate: value[5] as f32,
+                    early_cut_off_lower_bound: value[6] as f32,
+                    early_cut_off_upper_bound: value[7] as f32,
+                },
+                meta_weight_base: value[8] as f32,
+                meta_weight_progress_offset: value[9] as f32,
+                meta_cell_big_threat: value[10] as f32,
+                meta_cell_small_threat: value[11] as f32,
+                constraint_factor: value[12] as f32,
+                free_choice_constraint_factor: value[13] as f32,
+                direct_loss_value: value[14] as f32,
+            },
+        })
+    }
+}
+
+/*impl From<Vec<f64>> for Config {
     fn from(value: Vec<f64>) -> Self {
         Config::from(&value[..])
     }
@@ -187,7 +226,7 @@ impl From<&[f64]> for Config {
             },
         }
     }
-}
+}*/
 
 impl From<Config> for Vec<f64> {
     fn from(value: Config) -> Self {
@@ -303,13 +342,3 @@ impl Config {
             .collect()
     }
 }
-
-pub trait ConfigHandler {
-    fn params_to_config(params: &[f64]) -> Config {
-        params.into()
-    }
-}
-
-pub struct DefaultConfigHandler {}
-
-impl ConfigHandler for DefaultConfigHandler {}

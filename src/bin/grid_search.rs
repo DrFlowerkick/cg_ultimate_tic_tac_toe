@@ -4,17 +4,13 @@ use cg_ultimate_tic_tac_toe::utilities::*;
 use my_lib::my_optimizer::*;
 use tracing::{info, span, Level};
 
-struct GridSearchConfigHandler {}
-
-impl ConfigHandler for GridSearchConfigHandler {
-    fn params_to_config(params: &[f64]) -> Config {
-        let mut cgs_config = Config::from(params);
-        cgs_config.heuristic.free_choice_constraint_factor = cgs_config.heuristic.constraint_factor;
-        cgs_config
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("Error occurred: {:?}", err);
     }
 }
 
-fn main() {
+fn run() -> anyhow::Result<()> {
     // enable tracing
     let _log_guard = TracingConfig {
         default_level: "debug",
@@ -51,8 +47,7 @@ fn main() {
 
     let grid_configuration = GridSearch {
         steps_per_param: 0, // only list ParamBound
-        channel_capacity: 1_000,
-        worker_threads: 4,
+        chunk_size: 100,
         population_saver: Some(PopulationSaver {
             file_path: filename.into(),
             step_size: 10,
@@ -60,7 +55,7 @@ fn main() {
         }),
     };
 
-    let grid_evaluation = UltTTTObjectiveFunction::<GridSearchConfigHandler> {
+    let grid_evaluation = UltTTTObjectiveFunction {
         num_matches: 90,
         early_break_off: Some(EarlyBreakOff {
             num_initial_matches: 10,
@@ -68,13 +63,13 @@ fn main() {
         }),
         progress_step_size: 10,
         estimated_num_of_steps: grid_configuration.get_estimate_of_cycles(&param_bounds) * 100, // 100 matches per candidate
-        phantom: std::marker::PhantomData,
     };
 
     let population_size = 20;
 
-    let population = grid_configuration.explore(&grid_evaluation, &param_bounds, population_size);
-    let best_config: Config = population.best().expect("Empty population").params[..].into();
+    let population =
+        grid_configuration.explore(&grid_evaluation, &param_bounds, population_size)?;
+    let best_config: Config = population.best().expect("Empty population").params[..].try_into()?;
 
     info!(
         "Finished UltTTT Grid Search with best candidate: {:?}",
@@ -82,4 +77,5 @@ fn main() {
     );
 
     save_population(&population, &Config::parameter_names(), filename, 3);
+    Ok(())
 }

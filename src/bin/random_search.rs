@@ -5,6 +5,12 @@ use my_lib::my_optimizer::*;
 use tracing::{info, span, Level};
 
 fn main() {
+    if let Err(err) = run() {
+        eprintln!("Error occurred: {:?}", err);
+    }
+}
+
+fn run() -> anyhow::Result<()> {
     // enable tracing
     let _log_guard = TracingConfig {
         default_level: "debug",
@@ -40,7 +46,7 @@ fn main() {
         }),
     };
 
-    let random_search_evaluation = UltTTTObjectiveFunction::<DefaultConfigHandler> {
+    let random_search_evaluation = UltTTTObjectiveFunction {
         num_matches: 90,
         early_break_off: Some(EarlyBreakOff {
             num_initial_matches: 10,
@@ -49,7 +55,6 @@ fn main() {
         progress_step_size: 10,
         estimated_num_of_steps: random_search_configuration.get_estimate_of_cycles(&param_bounds)
             * 100, // 100 matches
-        phantom: std::marker::PhantomData,
     };
 
     let population_size = 20;
@@ -58,8 +63,8 @@ fn main() {
         &random_search_evaluation,
         &param_bounds,
         population_size,
-    );
-    let best_config: Config = population.best().expect("Empty population").params[..].into();
+    )?;
+    let best_config: Config = population.best().expect("Empty population").params[..].try_into()?;
 
     info!(
         "Finished UltTTT Random Search with best candidate: {:?}",
@@ -67,4 +72,5 @@ fn main() {
     );
 
     save_population(&population, &Config::parameter_names(), filename, 3);
+    Ok(())
 }
