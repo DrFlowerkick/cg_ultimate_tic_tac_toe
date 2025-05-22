@@ -53,7 +53,8 @@ fn run() -> anyhow::Result<()> {
             score_threshold: 0.5,
         }),
         progress_step_size: 10,
-        estimated_num_of_steps: random_search_configuration.get_estimate_of_cycles(&param_bounds)
+        estimated_num_of_steps: random_search_configuration
+            .get_estimate_of_cycles(&param_bounds)?
             * 100, // 100 matches
     };
 
@@ -71,6 +72,6 @@ fn run() -> anyhow::Result<()> {
         best_config
     );
 
-    save_population(&population, &Config::parameter_names(), filename, 3);
+    save_population(&population, &Config::parameter_names(), filename, 3)?;
     Ok(())
 }

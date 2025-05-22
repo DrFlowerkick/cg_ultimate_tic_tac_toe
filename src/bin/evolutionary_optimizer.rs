@@ -35,9 +35,7 @@ fn run() -> anyhow::Result<()> {
     let param_bounds = Config::param_bounds();
 
     let filename = "random_search_results.csv";
-    let Some((initial_population, param_names)) = load_population(filename, true) else {
-        panic!("Failed to load population from '{}'.", filename);
-    };
+    let (initial_population, param_names) = load_population(filename, true)?;
     assert_eq!(param_names, Config::parameter_names());
     let filename = "evolutionary_optimizer_results.csv";
     let population_size = initial_population.capacity();
@@ -69,7 +67,7 @@ fn run() -> anyhow::Result<()> {
         }),
         progress_step_size: 10,
         estimated_num_of_steps: evolutionary_optimizer_configuration
-            .get_estimate_of_cycles(&param_bounds)
+            .get_estimate_of_cycles(&param_bounds)?
             * 100, // 100 matches
     };
 
@@ -90,6 +88,6 @@ fn run() -> anyhow::Result<()> {
         &Config::parameter_names(),
         "evolutionary_optimizer_results.csv",
         3,
-    );
+    )?;
     Ok(())
 }

@@ -62,7 +62,7 @@ fn run() -> anyhow::Result<()> {
             score_threshold: 0.4,
         }),
         progress_step_size: 10,
-        estimated_num_of_steps: grid_configuration.get_estimate_of_cycles(&param_bounds) * 100, // 100 matches per candidate
+        estimated_num_of_steps: grid_configuration.get_estimate_of_cycles(&param_bounds)? * 100, // 100 matches per candidate
     };
 
     let population_size = 20;
@@ -76,6 +76,6 @@ fn run() -> anyhow::Result<()> {
         best_config
     );
 
-    save_population(&population, &Config::parameter_names(), filename, 3);
+    save_population(&population, &Config::parameter_names(), filename, 3)?;
     Ok(())
 }
