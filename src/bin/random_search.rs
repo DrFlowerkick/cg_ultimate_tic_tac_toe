@@ -14,10 +14,11 @@ fn run() -> anyhow::Result<()> {
     // enable tracing
     let _log_guard = TracingConfig {
         default_level: "debug",
-        format: LogFormat::PlainText,
+        console_format: LogFormat::PlainText,
         file_log: Some(FileLogConfig {
             directory: ".",
             prefix: "random_search_log".into(),
+            format: LogFormat::Json,
         }),
     }
     .init();

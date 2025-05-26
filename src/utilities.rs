@@ -192,42 +192,6 @@ impl TryFrom<&[f64]> for Config {
     }
 }
 
-/*impl From<Vec<f64>> for Config {
-    fn from(value: Vec<f64>) -> Self {
-        Config::from(&value[..])
-    }
-}
-
-impl From<&[f64]> for Config {
-    fn from(value: &[f64]) -> Self {
-        Config {
-            mcts: UltTTTMCTSConfig {
-                base_config: BaseConfig {
-                    exploration_constant: value[0] as f32,
-                    progressive_widening_constant: value[1] as f32,
-                    progressive_widening_exponent: value[2] as f32,
-                    early_cut_off_depth: value[3].round() as usize,
-                },
-            },
-            heuristic: UltTTTHeuristicConfig {
-                base_config: BaseHeuristicConfig {
-                    progressive_widening_initial_threshold: value[4] as f32,
-                    progressive_widening_decay_rate: value[5] as f32,
-                    early_cut_off_lower_bound: value[6] as f32,
-                    early_cut_off_upper_bound: value[7] as f32,
-                },
-                meta_weight_base: value[8] as f32,
-                meta_weight_progress_offset: value[9] as f32,
-                meta_cell_big_threat: value[10] as f32,
-                meta_cell_small_threat: value[11] as f32,
-                constraint_factor: value[12] as f32,
-                free_choice_constraint_factor: value[13] as f32,
-                direct_loss_value: value[14] as f32,
-            },
-        }
-    }
-}*/
-
 impl From<Config> for Vec<f64> {
     fn from(value: Config) -> Self {
         vec![

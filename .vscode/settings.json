@@ -1,10 +1,12 @@
 {
     "cSpell.words": [
+        "chrono",
         "codingame",
         "mcts",
         "mtcs",
         "mylib",
         "repr",
+        "serde",
         "statrs",
         "TTTMCTS",
         "UltTTTMCTSGame",

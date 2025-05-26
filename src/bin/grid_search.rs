@@ -14,10 +14,11 @@ fn run() -> anyhow::Result<()> {
     // enable tracing
     let _log_guard = TracingConfig {
         default_level: "debug",
-        format: LogFormat::PlainText,
+        console_format: LogFormat::PlainText,
         file_log: Some(FileLogConfig {
             directory: ".",
             prefix: "grid_search_log".into(),
+            format: LogFormat::Json,
         }),
     }
     .init();
@@ -26,6 +27,11 @@ fn run() -> anyhow::Result<()> {
     let _enter = span_search.enter();
 
     info!("Starting UltTTT Grid Search");
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build_global()
+        .unwrap();
 
     let mut param_bounds = Config::param_bounds();
     let grid_list_config = vec![
