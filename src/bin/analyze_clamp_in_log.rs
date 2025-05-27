@@ -14,7 +14,7 @@ fn run() -> anyhow::Result<()> {
         "./optimization/evolutionary",
         "evolutionary_optimizer_log*",
         Some((
-            NaiveDate::from_ymd_opt(2025, 5, 22).unwrap(),
+            NaiveDate::from_ymd_opt(2025, 5, 23).unwrap(),
             NaiveDate::from_ymd_opt(2025, 5, 24).unwrap(),
         )),
     )
