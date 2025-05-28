@@ -59,6 +59,7 @@ include = [
     "evaluate@impl TicTacToeStatus",
     "execute_action",
     "expandable_moves@impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
+    "get_board_control@impl TicTacToeGameData",
     "get_cell",
     "get_cell_mut",
     "get_children",

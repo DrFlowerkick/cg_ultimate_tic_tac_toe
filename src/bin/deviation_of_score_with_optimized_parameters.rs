@@ -3,9 +3,9 @@
 use cg_ultimate_tic_tac_toe::utilities::*;
 use my_lib::my_optimizer::*;
 use statrs::statistics::Statistics;
-use tracing::{info, span, Level};
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use tracing::{info, span, Level};
 
 fn main() {
     if let Err(err) = run() {
@@ -31,15 +31,10 @@ fn run() -> anyhow::Result<()> {
 
     info!("Starting UltTTT analysis of deviation of score");
     // load random search results
-    let (random_search_population, _) = load_population(
-        "random_search_results.csv",
-        true,
-    )?;
+    let (random_search_population, _) = load_population("random_search_results.csv", true)?;
     // load evolutionary optimizer results
-    let (evolutionary_optimizer_population, _) = load_population(
-        "evolutionary_optimizer_results.csv",
-        true,
-    )?;
+    let (evolutionary_optimizer_population, _) =
+        load_population("evolutionary_optimizer_results.csv", true)?;
 
     let mut merged_population = Population::new(50);
     merged_population.merge(evolutionary_optimizer_population);
@@ -76,12 +71,18 @@ fn run() -> anyhow::Result<()> {
     let file = File::create("deviation_of_score_results.csv")?;
     let mut writer = BufWriter::new(file);
     let param_names = Config::parameter_names().join(",");
-    writeln!(writer, "{},average_score,mean_score,std_dev_score", param_names)?;
+    writeln!(
+        writer,
+        "{},average_score,mean_score,std_dev_score",
+        param_names
+    )?;
     for (candidate, mean_score, std_dev_score) in &results {
         writeln!(
             writer,
             "{},{:.3},{:.3}",
-            candidate.to_csv(3), mean_score, std_dev_score
+            candidate.to_csv(3),
+            mean_score,
+            std_dev_score
         )?;
     }
 

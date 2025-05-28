@@ -144,8 +144,8 @@ impl MCTSConfig for UltTTTMCTSConfig {
 #[derive(Debug, Clone, Copy)]
 struct UltTTTHeuristicConfig {
     base_config: BaseHeuristicConfig,
-    meta_weight_base: f32,
-    meta_weight_progress_offset: f32,
+    control_base_weight: f32,
+    control_progress_offset: f32,
     meta_cell_big_threat: f32,
     meta_cell_small_threat: f32,
     constraint_factor: f32,
@@ -161,8 +161,8 @@ impl UltTTTHeuristicConfig {
                 early_cut_off_lower_bound: 0.161,
                 early_cut_off_upper_bound: 0.941,
             },
-            meta_weight_base: 0.573,
-            meta_weight_progress_offset: 0.271,
+            control_base_weight: 0.573,
+            control_progress_offset: 0.271,
             meta_cell_big_threat: 3.931,
             meta_cell_small_threat: 1.17,
             constraint_factor: 1.291,
@@ -194,8 +194,8 @@ impl Default for UltTTTHeuristicConfig {
                 early_cut_off_lower_bound: 0.05,
                 early_cut_off_upper_bound: 0.95,
             },
-            meta_weight_base: 0.3,
-            meta_weight_progress_offset: 0.4,
+            control_base_weight: 0.3,
+            control_progress_offset: 0.4,
             meta_cell_big_threat: 3.0,
             meta_cell_small_threat: 1.5,
             constraint_factor: 1.5,
@@ -207,6 +207,7 @@ impl Default for UltTTTHeuristicConfig {
 trait UltTTTGameCacheTrait {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
     fn get_board_progress(&mut self, board: &TicTacToeGameData) -> (usize, usize, usize);
+    fn get_board_control(&mut self, board: &TicTacToeGameData) -> (f32, f32);
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize);
     fn get_meta_cell_threats(
         &mut self,
@@ -223,6 +224,9 @@ impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
         let opp_wins = board.count_opp_cells();
         let played_cells = board.count_non_vacant_cells();
         (my_wins, opp_wins, played_cells)
+    }
+    fn get_board_control(&mut self, board: &TicTacToeGameData) -> (f32, f32) {
+        board.get_board_control()
     }
     fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
         board.get_threats()
@@ -277,93 +281,119 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
         let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
             Some(value) => value,
             None => {
+                let mut my_control_sum = 0.0;
+                let mut opp_control_sum = 0.0;
                 let mut my_threat_sum = 0.0;
                 let mut opp_threat_sum = 0.0;
-                for (status_index, _) in state.status_map.iter_map().filter(|(_, c)| c.is_vacant())
-                {
-                    let (my_threats, opp_threats) =
-                        game_cache.get_board_threats(state.map.get_cell(status_index));
-                    let cell_weight = status_index.cell_weight();
-                    let (
-                        my_meta_threats,
-                        my_meta_small_threats,
-                        opp_meta_threats,
-                        opp_meta_small_threats,
-                    ) = game_cache.get_meta_cell_threats(&state.status_map, status_index);
-                    let my_meta_factor = 1.0
-                        + heuristic_config.meta_cell_big_threat * my_meta_threats as f32
-                        + heuristic_config.meta_cell_small_threat * my_meta_small_threats as f32;
-                    let opp_meta_factor = 1.0
-                        + heuristic_config.meta_cell_big_threat * opp_meta_threats as f32
-                        + heuristic_config.meta_cell_small_threat * opp_meta_small_threats as f32;
-                    let constraint_factor = match state.next_action_constraint {
-                        NextActionConstraint::MiniBoard(next_board) => {
-                            if status_index == next_board {
-                                if UltTTTHeuristic::is_direct_loss(
-                                    state.last_player,
-                                    my_threats,
-                                    my_meta_threats,
-                                    opp_threats,
-                                    opp_meta_threats,
-                                ) {
-                                    heuristic_cache.insert_intermediate_score(
-                                        state,
-                                        heuristic_config.direct_loss_value,
-                                    );
-                                    return if perspective_is_last_player {
-                                        heuristic_config.direct_loss_value
-                                    } else {
-                                        1.0 - heuristic_config.direct_loss_value
-                                    };
-                                }
-                                heuristic_config.constraint_factor
-                            } else {
-                                1.0
-                            }
+                for (status_index, status) in state.status_map.iter_map() {
+                    match status {
+                        TicTacToeStatus::Tie => {
+                            continue;
                         }
-                        NextActionConstraint::None => {
-                            if UltTTTHeuristic::is_direct_loss(
-                                state.last_player,
-                                my_threats,
+                        TicTacToeStatus::Me => {
+                            my_control_sum += status_index.cell_weight();
+                        }
+                        TicTacToeStatus::Opp => {
+                            opp_control_sum += status_index.cell_weight();
+                        }
+                        TicTacToeStatus::Vacant => {
+                            let (my_control, opp_control) =
+                                game_cache.get_board_control(state.map.get_cell(status_index));
+                            let my_control_score = 0.5 + 0.5 * (my_control - opp_control) / 15.0;
+                            let opp_control_score = 1.0 - my_control_score;
+                            my_control_sum += my_control_score * status_index.cell_weight();
+                            opp_control_sum += opp_control_score * status_index.cell_weight();
+                            let (my_threats, opp_threats) =
+                                game_cache.get_board_threats(state.map.get_cell(status_index));
+                            let cell_weight = status_index.cell_weight();
+                            let (
                                 my_meta_threats,
-                                opp_threats,
+                                my_meta_small_threats,
                                 opp_meta_threats,
-                            ) {
-                                heuristic_cache.insert_intermediate_score(
-                                    state,
-                                    heuristic_config.direct_loss_value,
-                                );
-                                return if perspective_is_last_player {
-                                    heuristic_config.direct_loss_value
-                                } else {
-                                    1.0 - heuristic_config.direct_loss_value
+                                opp_meta_small_threats,
+                            ) = game_cache.get_meta_cell_threats(&state.status_map, status_index);
+                            let my_meta_factor = 1.0
+                                + heuristic_config.meta_cell_big_threat * my_meta_threats as f32
+                                + heuristic_config.meta_cell_small_threat
+                                    * my_meta_small_threats as f32;
+                            let opp_meta_factor = 1.0
+                                + heuristic_config.meta_cell_big_threat * opp_meta_threats as f32
+                                + heuristic_config.meta_cell_small_threat
+                                    * opp_meta_small_threats as f32;
+                            let constraint_factor = match state.next_action_constraint {
+                                NextActionConstraint::MiniBoard(next_board) => {
+                                    if status_index == next_board {
+                                        if UltTTTHeuristic::is_direct_loss(
+                                            state.last_player,
+                                            my_threats,
+                                            my_meta_threats,
+                                            opp_threats,
+                                            opp_meta_threats,
+                                        ) {
+                                            heuristic_cache.insert_intermediate_score(
+                                                state,
+                                                heuristic_config.direct_loss_value,
+                                            );
+                                            return if perspective_is_last_player {
+                                                heuristic_config.direct_loss_value
+                                            } else {
+                                                1.0 - heuristic_config.direct_loss_value
+                                            };
+                                        }
+                                        heuristic_config.constraint_factor
+                                    } else {
+                                        1.0
+                                    }
+                                }
+                                NextActionConstraint::None => {
+                                    if UltTTTHeuristic::is_direct_loss(
+                                        state.last_player,
+                                        my_threats,
+                                        my_meta_threats,
+                                        opp_threats,
+                                        opp_meta_threats,
+                                    ) {
+                                        heuristic_cache.insert_intermediate_score(
+                                            state,
+                                            heuristic_config.direct_loss_value,
+                                        );
+                                        return if perspective_is_last_player {
+                                            heuristic_config.direct_loss_value
+                                        } else {
+                                            1.0 - heuristic_config.direct_loss_value
+                                        };
+                                    }
+                                    heuristic_config.free_choice_constraint_factor
+                                }
+                                NextActionConstraint::Init => {
+                                    unreachable!("Init is reserved for initial tree root node.")
+                                }
+                            };
+                            let (my_constraint_factor, opp_constraint_factor) =
+                                match state.current_player {
+                                    TicTacToeStatus::Me => (constraint_factor, 1.0),
+                                    TicTacToeStatus::Opp => (1.0, constraint_factor),
+                                    _ => unreachable!("Only Me and Opp are allowed for player."),
                                 };
-                            }
-                            heuristic_config.free_choice_constraint_factor
+                            my_threat_sum += my_constraint_factor
+                                * my_meta_factor
+                                * cell_weight
+                                * my_threats as f32;
+                            opp_threat_sum += opp_constraint_factor
+                                * opp_meta_factor
+                                * cell_weight
+                                * opp_threats as f32;
                         }
-                        NextActionConstraint::Init => {
-                            unreachable!("Init is reserved for initial tree root node.")
-                        }
-                    };
-                    let (my_constraint_factor, opp_constraint_factor) = match state.current_player {
-                        TicTacToeStatus::Me => (constraint_factor, 1.0),
-                        TicTacToeStatus::Opp => (1.0, constraint_factor),
-                        _ => unreachable!("Only Me and Opp are allowed for player."),
-                    };
-                    my_threat_sum +=
-                        my_constraint_factor * my_meta_factor * cell_weight * my_threats as f32;
-                    opp_threat_sum +=
-                        opp_constraint_factor * opp_meta_factor * cell_weight * opp_threats as f32;
+                    }
                 }
-                let (my_wins, opp_wins, played_cells) =
-                    game_cache.get_board_progress(&state.status_map);
+                let (_, _, played_cells) = game_cache.get_board_progress(&state.status_map);
                 let progress = played_cells as f32 / 9.0;
-                let meta_weight = heuristic_config.meta_weight_base
-                    + heuristic_config.meta_weight_progress_offset * progress;
-                let threat_weight = 1.0 - meta_weight;
+                let control_weight = heuristic_config.control_base_weight
+                    + heuristic_config.control_progress_offset * progress;
+                let threat_weight = 1.0 - control_weight;
                 let max_threat_score = (my_threat_sum + opp_threat_sum).max(1.0);
                 let final_score = 0.5
-                    + 0.5 * meta_weight * (my_wins as f32 - opp_wins as f32) / 9.0
+                    + 0.5 * control_weight * (my_control_sum - opp_control_sum) / 24.0
                     + 0.5 * threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
                 final_score.clamp(0.0, 1.0)
             }
@@ -1592,6 +1622,23 @@ impl TicTacToeGameData {
             my_meta_small_threats,
             opp_meta_threats,
             opp_meta_small_threats,
+        )
+    }
+    fn get_board_control(&self) -> (f32, f32) {
+        self.map.iterate().fold(
+            (0.0, 0.0),
+            |(mut my_control, mut opp_control), (cell, status)| {
+                match status {
+                    TicTacToeStatus::Me => {
+                        my_control += cell.cell_weight();
+                    }
+                    TicTacToeStatus::Opp => {
+                        opp_control += cell.cell_weight();
+                    }
+                    TicTacToeStatus::Vacant | TicTacToeStatus::Tie => {}
+                }
+                (my_control, opp_control)
+            },
         )
     }
 }
