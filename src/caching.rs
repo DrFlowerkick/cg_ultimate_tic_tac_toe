@@ -1,7 +1,7 @@
 // game cache for UltTTT
 
 use super::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub struct UltTTTGameCache {
     pub cache: HashMap<TicTacToeGameData, BoardAnalysis>,
@@ -12,10 +12,10 @@ impl UltTTTGameCache {
     pub fn cache_board_analysis(&mut self, board: &TicTacToeGameData) -> BoardAnalysis {
         if let Some(cached_analysis) = self.cache.get(board) {
             self.usage += 1;
-            return *cached_analysis;
+            return cached_analysis.clone();
         }
         let board_analysis = board.board_analysis();
-        self.cache.insert(*board, board_analysis);
+        self.cache.insert(*board, board_analysis.clone());
         board_analysis
     }
 }
@@ -33,7 +33,10 @@ pub trait UltTTTGameCacheTrait {
     fn get_status(&mut self, board: &TicTacToeGameData) -> TicTacToeStatus;
     fn get_board_progress(&mut self, board: &TicTacToeGameData) -> (usize, usize, usize);
     fn get_board_control(&mut self, board: &TicTacToeGameData) -> (f32, f32);
-    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize);
+    fn get_board_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+    ) -> (HashSet<CellIndex3x3>, HashSet<CellIndex3x3>);
     fn get_meta_cell_threats(
         &mut self,
         board: &TicTacToeGameData,
@@ -57,7 +60,10 @@ impl UltTTTGameCacheTrait for UltTTTGameCache {
         let board_analysis = self.cache_board_analysis(board);
         (board_analysis.my_control, board_analysis.opp_control)
     }
-    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+    fn get_board_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+    ) -> (HashSet<CellIndex3x3>, HashSet<CellIndex3x3>) {
         let board_analysis = self.cache_board_analysis(board);
         (board_analysis.my_threats, board_analysis.opp_threats)
     }
@@ -84,7 +90,10 @@ impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
     fn get_board_control(&mut self, board: &TicTacToeGameData) -> (f32, f32) {
         board.get_board_control()
     }
-    fn get_board_threats(&mut self, board: &TicTacToeGameData) -> (usize, usize) {
+    fn get_board_threats(
+        &mut self,
+        board: &TicTacToeGameData,
+    ) -> (HashSet<CellIndex3x3>, HashSet<CellIndex3x3>) {
         board.get_threats()
     }
     fn get_meta_cell_threats(
