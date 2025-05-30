@@ -242,6 +242,6 @@ fn test_mcts_ult_ttt_with_game_cache() {
             UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
                 .unwrap();
     }
-    println!("{} wins out of {} matches.", wins, number_of_matches);
+    println!("{:.1} wins out of {} matches.", wins, number_of_matches);
     //assert_eq!(wins, 25.0);
 }

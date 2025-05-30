@@ -146,8 +146,11 @@ struct UltTTTHeuristicConfig {
     base_config: BaseHeuristicConfig,
     control_base_weight: f32,
     control_progress_offset: f32,
+    control_local_steepness: f32,
+    control_global_steepness: f32,
     meta_cell_big_threat: f32,
     meta_cell_small_threat: f32,
+    threat_steepness: f32,
     constraint_factor: f32,
     free_choice_constraint_factor: f32,
     direct_loss_value: f32,
@@ -163,8 +166,11 @@ impl UltTTTHeuristicConfig {
             },
             control_base_weight: 0.573,
             control_progress_offset: 0.271,
+            control_local_steepness: 0.15,
+            control_global_steepness: 0.3,
             meta_cell_big_threat: 3.931,
             meta_cell_small_threat: 1.17,
+            threat_steepness: 0.5,
             constraint_factor: 1.291,
             free_choice_constraint_factor: 1.344,
             direct_loss_value: 0.0,
@@ -196,8 +202,11 @@ impl Default for UltTTTHeuristicConfig {
             },
             control_base_weight: 0.3,
             control_progress_offset: 0.4,
+            control_local_steepness: 0.15,
+            control_global_steepness: 0.3,
             meta_cell_big_threat: 3.0,
             meta_cell_small_threat: 1.5,
+            threat_steepness: 0.5,
             constraint_factor: 1.5,
             free_choice_constraint_factor: 1.5,
             direct_loss_value: 0.01,
@@ -306,6 +315,10 @@ impl UltTTTHeuristic {
             .count();
         num_last_player_back_to_threat_line as f32 / current_player_threats.len() as f32
     }
+    fn normalized_tanh(my_score: f32, opp_score: f32, steepness: f32) -> f32 {
+        let delta_score = steepness * (my_score - opp_score);
+        (delta_score.tanh() + 1.0) / 2.0
+    }
 }
 impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>>
     for UltTTTHeuristic
@@ -353,7 +366,11 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                         TicTacToeStatus::Vacant => {
                             let (my_control, opp_control) =
                                 game_cache.get_board_control(state.map.get_cell(status_index));
-                            let my_control_score = 0.5 + 0.5 * (my_control - opp_control) / 15.0;
+                            let my_control_score = UltTTTHeuristic::normalized_tanh(
+                                my_control,
+                                opp_control,
+                                heuristic_config.control_local_steepness,
+                            );
                             let opp_control_score = 1.0 - my_control_score;
                             my_control_sum += my_control_score * status_index.cell_weight();
                             opp_control_sum += opp_control_score * status_index.cell_weight();
@@ -445,11 +462,18 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 let control_weight = heuristic_config.control_base_weight
                     + heuristic_config.control_progress_offset * progress;
                 let threat_weight = 1.0 - control_weight;
-                let max_threat_score = (my_threat_sum + opp_threat_sum).max(1.0);
-                let final_score = 0.5
-                    + 0.5 * control_weight * (my_control_sum - opp_control_sum) / 24.0
-                    + 0.5 * threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
-                final_score.clamp(0.0, 1.0)
+                control_weight
+                    * UltTTTHeuristic::normalized_tanh(
+                        my_control_sum,
+                        opp_control_sum,
+                        heuristic_config.control_global_steepness,
+                    )
+                    + threat_weight
+                        * UltTTTHeuristic::normalized_tanh(
+                            my_threat_sum,
+                            opp_threat_sum,
+                            heuristic_config.threat_steepness,
+                        )
             }
         };
         let score = match state.last_player {

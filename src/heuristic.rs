@@ -69,6 +69,13 @@ impl UltTTTHeuristic {
             .count();
         num_last_player_back_to_threat_line as f32 / current_player_threats.len() as f32
     }
+    pub fn normalized_tanh(my_score: f32, opp_score: f32, steepness: f32) -> f32 {
+        // tanh is in range [-1.0, 1.0]
+        // so we normalize it to [0.0, 1.0]
+        // use steepness to control the steepness of the tanh curve
+        let delta_score = steepness * (my_score - opp_score);
+        (delta_score.tanh() + 1.0) / 2.0
+    }
 }
 
 impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>>
@@ -134,12 +141,11 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                             // mini board control
                             let (my_control, opp_control) =
                                 game_cache.get_board_control(state.map.get_cell(status_index));
-                            // If one player controls all cells of the mini board besides the cells of one diagonal,
-                            // he has maximum control of mini board without winning it. Therefore the maximum control
-                            // value is 14: 4 side cells (4 * 2) + 2 corner cells (2 * 3)
-                            // Since a control score of 1.0 is reserved for winning a mini board, we divide the
-                            // delta control by 15.
-                            let my_control_score = 0.5 + 0.5 * (my_control - opp_control) / 15.0;
+                            let my_control_score = UltTTTHeuristic::normalized_tanh(
+                                my_control,
+                                opp_control,
+                                heuristic_config.control_local_steepness,
+                            );
                             let opp_control_score = 1.0 - my_control_score;
                             my_control_sum += my_control_score * status_index.cell_weight();
                             opp_control_sum += opp_control_score * status_index.cell_weight();
@@ -243,14 +249,19 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 let control_weight = heuristic_config.control_base_weight
                     + heuristic_config.control_progress_offset * progress;
                 let threat_weight = 1.0 - control_weight;
-                let max_threat_score = (my_threat_sum + opp_threat_sum).max(1.0);
-
-                // 24 is the maximum control score, if all 9 mini boards are controlled
-                let final_score = 0.5
-                    + 0.5 * control_weight * (my_control_sum - opp_control_sum) / 24.0
-                    + 0.5 * threat_weight * (my_threat_sum - opp_threat_sum) / max_threat_score;
-
-                final_score.clamp(0.0, 1.0)
+                // calculate final score
+                control_weight
+                    * UltTTTHeuristic::normalized_tanh(
+                        my_control_sum,
+                        opp_control_sum,
+                        heuristic_config.control_global_steepness,
+                    )
+                    + threat_weight
+                        * UltTTTHeuristic::normalized_tanh(
+                            my_threat_sum,
+                            opp_threat_sum,
+                            heuristic_config.threat_steepness,
+                        )
             }
         };
         // score is calculated from perspective of me

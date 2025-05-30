@@ -26,45 +26,58 @@ fn run() -> anyhow::Result<()> {
     let span_search = span!(Level::INFO, "UltTTTEvolutionaryOptimize");
     let _enter = span_search.enter();
 
-    info!("Starting UltTTT Evolutionary Optimize");
-
     rayon::ThreadPoolBuilder::new()
         .num_threads(4)
         .build_global()
         .unwrap();
 
+
+    info!("Starting UltTTT Evolutionary Optimize");
+
+    let filename = "evolutionary_optimizer_results.csv";
+    let population_size = 20;
+
+    let (initial_population, parameter_names) = load_population(filename, true)?;
+    assert_eq!(parameter_names, Config::parameter_names());
+    assert_eq!(initial_population.size(), population_size);
+
     let param_bounds = Config::param_bounds();
 
-    let filename = "random_search_results.csv";
-    let (initial_population, param_names) = load_population(filename, true)?;
-    assert_eq!(param_names, Config::parameter_names());
-    let filename = "evolutionary_optimizer_results.csv";
-    let population_size = initial_population.capacity();
-
-    let evolutionary_optimizer_configuration = EvolutionaryOptimizer::<ExponentialSchedule> {
-        generations: 100,
-        population_size,
-        mutation_rate: 0.2,
-        hard_mutation_rate: 0.05,
-        soft_mutation_std_dev: 0.05,
-        selection_schedule: ExponentialSchedule {
-            start: 0.5,
-            end: 0.05,
-            exponent: 2.0,
-        },
-        initial_population,
-        population_saver: Some(PopulationSaver {
-            file_path: filename.into(),
-            step_size: 10,
+    let evolutionary_optimizer_configuration =
+        EvolutionaryOptimizer::<ExponentialSchedule, SigmoidSchedule, ExponentialSchedule> {
+            generations: 100,
+            population_size,
+            hard_mutation_rate: SigmoidSchedule {
+                start: 0.5,
+                end: 0.01,
+                steepness: 10.0,
+            },
+            soft_mutation_std_dev: ExponentialSchedule {
+                start: 0.01,
+                end: 0.1,
+                exponent: 2.0,
+            },
+            max_attempts: 5,
+            tolerance: 0.01,
             precision: 3,
-        }),
-    };
+            selection_schedule: ExponentialSchedule {
+                start: 0.7, // start selection of 14 candidates with population size 20
+                end: 0.1,   // end selection of 2 candidates with population size 20
+                exponent: 2.0,
+            },
+            initial_population,
+            population_saver: Some(PopulationSaver {
+                file_path: filename.into(),
+                step_size: 10,
+                precision: 3,
+            }),
+        };
 
     let evolutionary_optimizer_evaluation = UltTTTObjectiveFunction {
         num_matches: 90,
         early_break_off: Some(EarlyBreakOff {
             num_initial_matches: 10,
-            score_threshold: 0.4,
+            score_threshold: 0.7,
         }),
         progress_step_size: 10,
         estimated_num_of_steps: evolutionary_optimizer_configuration

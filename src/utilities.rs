@@ -161,7 +161,7 @@ impl TryFrom<&[f64]> for Config {
     type Error = anyhow::Error;
 
     fn try_from(value: &[f64]) -> Result<Self, Self::Error> {
-        if value.len() != 15 {
+        if value.len() != 18 {
             return Err(anyhow::anyhow!("Wrong number of parameters"));
         }
         Ok(Config {
@@ -182,11 +182,14 @@ impl TryFrom<&[f64]> for Config {
                 },
                 control_base_weight: value[8] as f32,
                 control_progress_offset: value[9] as f32,
-                meta_cell_big_threat: value[10] as f32,
-                meta_cell_small_threat: value[11] as f32,
-                constraint_factor: value[12] as f32,
-                free_choice_constraint_factor: value[13] as f32,
-                direct_loss_value: value[14] as f32,
+                control_local_steepness: value[10] as f32,
+                control_global_steepness: value[11] as f32,
+                meta_cell_big_threat: value[12] as f32,
+                meta_cell_small_threat: value[13] as f32,
+                threat_steepness: value[14] as f32,
+                constraint_factor: value[15] as f32,
+                free_choice_constraint_factor: value[16] as f32,
+                direct_loss_value: value[17] as f32,
             },
         })
     }
@@ -206,10 +209,13 @@ impl From<Config> for Vec<f64> {
             value.heuristic.base_config.progressive_widening_decay_rate as f64,
             value.heuristic.base_config.early_cut_off_lower_bound as f64,
             value.heuristic.base_config.early_cut_off_upper_bound as f64,
+            value.heuristic.control_local_steepness as f64,
+            value.heuristic.control_global_steepness as f64,
             value.heuristic.control_base_weight as f64,
             value.heuristic.control_progress_offset as f64,
             value.heuristic.meta_cell_big_threat as f64,
             value.heuristic.meta_cell_small_threat as f64,
+            value.heuristic.threat_steepness as f64,
             value.heuristic.constraint_factor as f64,
             value.heuristic.free_choice_constraint_factor as f64,
             value.heuristic.direct_loss_value as f64,
@@ -230,8 +236,11 @@ impl Config {
             "early_cut_off_upper_bound".into(),
             "control_base_weight".into(),
             "control_progress_offset".into(),
+            "control_local_steepness".into(),
+            "control_global_steepness".into(),
             "meta_cell_big_threat".into(),
             "meta_cell_small_threat".into(),
+            "threat_steepness".into(),
             "constraint_factor".into(),
             "free_choice_constraint_factor".into(),
             "direct_loss_value".into(),
@@ -256,10 +265,13 @@ impl Config {
                 },
                 control_base_weight: 0.3,
                 control_progress_offset: 0.2,
+                control_local_steepness: 0.05,
+                control_global_steepness: 0.1,
                 meta_cell_big_threat: 2.0,
                 meta_cell_small_threat: 0.5,
-                constraint_factor: 1.0,
-                free_choice_constraint_factor: 1.0,
+                threat_steepness: 0.1,
+                constraint_factor: 0.0,
+                free_choice_constraint_factor: 0.0,
                 direct_loss_value: 0.0,
             },
         }
@@ -284,10 +296,13 @@ impl Config {
                 },
                 control_base_weight: 0.6,
                 control_progress_offset: 0.4,
+                control_local_steepness: 0.3,
+                control_global_steepness: 0.6,
                 meta_cell_big_threat: 4.0,
                 meta_cell_small_threat: 1.5,
-                constraint_factor: 2.0,
-                free_choice_constraint_factor: 2.0,
+                threat_steepness: 1.0,
+                constraint_factor: 1.0,
+                free_choice_constraint_factor: 1.0,
                 direct_loss_value: 0.025,
             },
         }
@@ -299,9 +314,17 @@ impl Config {
             .into_iter()
             .zip(upper_bounds.into_iter())
             .zip(Config::parameter_names().iter())
-            .map(|((min, max), name)| ParamDescriptor {
-                name: name.to_owned(),
-                bound: ParamBound::MinMax(min, max),
+            .map(|((min, max), name)| match name.as_str() {
+                "control_local_steepness" | "control_global_steepness" | "threat_steepness" => {
+                    ParamDescriptor {
+                        name: name.to_owned(),
+                        bound: ParamBound::LogScale(min, max),
+                    }
+                }
+                _ => ParamDescriptor {
+                    name: name.to_owned(),
+                    bound: ParamBound::MinMax(min, max),
+                },
             })
             .collect()
     }
