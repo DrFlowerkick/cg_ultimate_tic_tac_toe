@@ -44,7 +44,7 @@ fn run() -> anyhow::Result<()> {
     let param_bounds = Config::param_bounds();
 
     let evolutionary_optimizer_configuration =
-        EvolutionaryOptimizer::<ExponentialSchedule, SigmoidSchedule, ExponentialSchedule> {
+        EvolutionaryOptimizer::<ExponentialSchedule, SigmoidSchedule, ExponentialSchedule, DefaultTolerance> {
             generations: 100,
             population_size,
             hard_mutation_rate: SigmoidSchedule {
@@ -58,8 +58,6 @@ fn run() -> anyhow::Result<()> {
                 exponent: 2.0,
             },
             max_attempts: 5,
-            tolerance: 0.01,
-            precision: 3,
             selection_schedule: ExponentialSchedule {
                 start: 0.7, // start selection of 14 candidates with population size 20
                 end: 0.1,   // end selection of 2 candidates with population size 20

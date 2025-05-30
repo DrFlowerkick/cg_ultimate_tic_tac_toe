@@ -48,7 +48,7 @@ fn run() -> anyhow::Result<()> {
         estimated_num_of_steps: num_test_runs * merged_population.size() * 100, // 100 matches per candidate
     };
 
-    let mut results: Vec<(Candidate, f64, f64)> = Vec::new();
+    let mut results: Vec<(Candidate<DefaultTolerance>, f64, f64)> = Vec::new();
 
     for candidate in merged_population.iter() {
         let config = Config::try_from(&candidate.params[..])?;

@@ -59,6 +59,7 @@ fn run() -> anyhow::Result<()> {
             step_size: 10,
             precision: 3,
         }),
+        phantom: std::marker::PhantomData::<DefaultTolerance>,
     };
 
     let grid_evaluation = UltTTTObjectiveFunction {

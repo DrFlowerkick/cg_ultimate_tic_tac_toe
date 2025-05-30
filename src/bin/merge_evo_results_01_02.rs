@@ -29,10 +29,10 @@ fn run() -> anyhow::Result<()> {
     let output_filename = "./optimization/evolutionary/merged_evolutionary_optimizer_results.csv";
 
     // load the first generation results
-    let (population_01, _) = load_population(filename_01, true)?;
+    let (population_01, _) = load_population::<&str, DefaultTolerance>(filename_01, true)?;
     let (population_02, _) = load_population(filename_02, true)?;
 
-    let mut population = Population::new(20);
+    let mut population = Population::<DefaultTolerance>::new(20);
 
     let evaluation = UltTTTObjectiveFunction {
         num_matches: 100,
@@ -44,7 +44,7 @@ fn run() -> anyhow::Result<()> {
 
     for candidate in population_01.iter().chain(population_02.iter()).take(20) {
         let score = evaluation.evaluate((&candidate.params[..]).try_into()?)?;
-        population.insert(Candidate { params: candidate.params.clone(), score });
+        population.insert(Candidate::new(candidate.params.clone(), score));
     }
 
     // save the merged population
