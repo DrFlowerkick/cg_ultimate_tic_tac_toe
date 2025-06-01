@@ -31,7 +31,6 @@ fn run() -> anyhow::Result<()> {
         .build_global()
         .unwrap();
 
-
     info!("Starting UltTTT Evolutionary Optimize");
 
     let filename = "evolutionary_optimizer_results.csv";
@@ -43,33 +42,32 @@ fn run() -> anyhow::Result<()> {
 
     let param_bounds = Config::param_bounds();
 
-    let evolutionary_optimizer_configuration =
-        EvolutionaryOptimizer::<ExponentialSchedule, SigmoidSchedule, ExponentialSchedule, DefaultTolerance> {
-            generations: 100,
-            population_size,
-            hard_mutation_rate: SigmoidSchedule {
-                start: 0.5,
-                end: 0.01,
-                steepness: 10.0,
-            },
-            soft_mutation_std_dev: ExponentialSchedule {
-                start: 0.01,
-                end: 0.1,
-                exponent: 2.0,
-            },
-            max_attempts: 5,
-            selection_schedule: ExponentialSchedule {
-                start: 0.7, // start selection of 14 candidates with population size 20
-                end: 0.1,   // end selection of 2 candidates with population size 20
-                exponent: 2.0,
-            },
-            initial_population,
-            population_saver: Some(PopulationSaver {
-                file_path: filename.into(),
-                step_size: 10,
-                precision: 3,
-            }),
-        };
+    let evolutionary_optimizer_configuration = EvolutionaryOptimizer::<
+        ConstantSchedule,
+        ConstantSchedule,
+        LinearSchedule,
+        DefaultTolerance,
+    > {
+        generations: 100,
+        population_size,
+        hard_mutation_rate: ConstantSchedule {
+            value: 0.05,    // 5% of parameters are mutated in each offspring
+        },
+        soft_mutation_relative_std_dev: LinearSchedule {
+            start: 0.1,     // start with 10% of value range standard deviation
+            end: 0.01,      // end with 1% of value range standard deviation
+        },
+        max_attempts: 5,
+        selection_schedule: ConstantSchedule {
+            value: 0.25,    // 25% of the population is selected for crossover
+        },
+        initial_population,
+        population_saver: Some(PopulationSaver {
+            file_path: filename.into(),
+            step_size: 10,
+            precision: 3,
+        }),
+    };
 
     let evolutionary_optimizer_evaluation = UltTTTObjectiveFunction {
         num_matches: 90,

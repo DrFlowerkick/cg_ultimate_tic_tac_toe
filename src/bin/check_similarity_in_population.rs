@@ -1,7 +1,7 @@
 // just a small helper tool
 
-use my_lib::my_optimizer::*;
 use cg_ultimate_tic_tac_toe::utilities::*;
+use my_lib::my_optimizer::*;
 
 fn main() {
     if let Err(err) = run() {
@@ -13,7 +13,10 @@ fn run() -> anyhow::Result<()> {
     let filename = "./optimization/evolutionary/merged_evolutionary_optimizer_results.csv";
     let (population, header) = load_population(filename, true)?;
     assert_eq!(header, Config::parameter_names());
-    let top_scores = population.top_n(5).map(|c: &Candidate<DefaultTolerance>| c.score).collect::<Vec<_>>();
+    let top_scores = population
+        .top_n(5)
+        .map(|c: &Candidate<DefaultTolerance>| c.score)
+        .collect::<Vec<_>>();
     println!("Top 5 scores: {:?}", top_scores);
     let tolerance = 0.01;
     println!("length of population: {}", population.size());

@@ -1,7 +1,7 @@
 // just a small helper tool
 
-use my_lib::my_optimizer::*;
 use cg_ultimate_tic_tac_toe::utilities::*;
+use my_lib::my_optimizer::*;
 use tracing::{info, span, Level};
 
 fn main() {
