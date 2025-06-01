@@ -34,7 +34,7 @@ fn run() -> anyhow::Result<()> {
     info!("Starting UltTTT Evolutionary Optimize");
 
     let filename = "evolutionary_optimizer_results.csv";
-    let population_size = 20;
+    let population_size = 50;
 
     let (initial_population, parameter_names) = load_population(filename, true)?;
     assert_eq!(parameter_names, Config::parameter_names());
@@ -43,23 +43,27 @@ fn run() -> anyhow::Result<()> {
     let param_bounds = Config::param_bounds();
 
     let evolutionary_optimizer_configuration = EvolutionaryOptimizer::<
-        ConstantSchedule,
-        ConstantSchedule,
+        ExponentialSchedule,
+        SigmoidSchedule,
         LinearSchedule,
         DefaultTolerance,
     > {
-        generations: 100,
+        generations: 300,
         population_size,
-        hard_mutation_rate: ConstantSchedule {
-            value: 0.05,    // 5% of parameters are mutated in each offspring
+        hard_mutation_rate: SigmoidSchedule {
+            start: 0.3,
+            end: 0.01,
+            steepness: 8.0,
         },
         soft_mutation_relative_std_dev: LinearSchedule {
-            start: 0.1,     // start with 10% of value range standard deviation
-            end: 0.01,      // end with 1% of value range standard deviation
+            start: 0.1,
+            end: 0.005,
         },
         max_attempts: 5,
-        selection_schedule: ConstantSchedule {
-            value: 0.25,    // 25% of the population is selected for crossover
+        selection_schedule: ExponentialSchedule {
+            start: 0.6,
+            end: 0.1,
+            exponent: 2.0,
         },
         initial_population,
         population_saver: Some(PopulationSaver {
@@ -70,9 +74,9 @@ fn run() -> anyhow::Result<()> {
     };
 
     let evolutionary_optimizer_evaluation = UltTTTObjectiveFunction {
-        num_matches: 90,
+        num_matches: 100,
         early_break_off: Some(EarlyBreakOff {
-            num_initial_matches: 10,
+            num_check_matches: 10,
             score_threshold: 0.7,
         }),
         progress_step_size: 10,

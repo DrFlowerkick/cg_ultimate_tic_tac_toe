@@ -11,6 +11,8 @@ pub use heuristic::*;
 
 pub mod utilities;
 
+mod old_heuristic;
+
 use my_lib::my_map_3x3::*;
 use my_lib::my_monte_carlo_tree_search::*;
 use my_lib::my_tic_tac_toe::*;

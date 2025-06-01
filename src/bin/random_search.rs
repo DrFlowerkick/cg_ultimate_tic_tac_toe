@@ -49,9 +49,9 @@ fn run() -> anyhow::Result<()> {
     };
 
     let random_search_evaluation = UltTTTObjectiveFunction {
-        num_matches: 90,
+        num_matches: 100,
         early_break_off: Some(EarlyBreakOff {
-            num_initial_matches: 10,
+            num_check_matches: 10,
             score_threshold: 0.5,
         }),
         progress_step_size: 10,

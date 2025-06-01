@@ -21,8 +21,8 @@ fn main() {
         UltTTTHeuristic,
         HeuristicCutoff,
     > = PlainMCTS::new(
-        UltTTTMCTSConfig::optimized(),
-        UltTTTHeuristicConfig::optimized(),
+        UltTTTMCTSConfig::new_optimized(),
+        UltTTTHeuristicConfig::new_optimized(),
     );
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || loop {
@@ -104,13 +104,13 @@ struct UltTTTMCTSConfig {
     base_config: BaseConfig,
 }
 impl UltTTTMCTSConfig {
-    fn optimized() -> Self {
+    fn new_optimized() -> Self {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
-                exploration_constant: 1.259,
-                progressive_widening_constant: 1.371,
-                progressive_widening_exponent: 0.343,
-                early_cut_off_depth: 19,
+                exploration_constant: 1.185,
+                progressive_widening_constant: 1.361,
+                progressive_widening_exponent: 0.407,
+                early_cut_off_depth: 18,
             },
         }
     }
@@ -156,23 +156,23 @@ struct UltTTTHeuristicConfig {
     direct_loss_value: f32,
 }
 impl UltTTTHeuristicConfig {
-    fn optimized() -> Self {
+    fn new_optimized() -> Self {
         UltTTTHeuristicConfig {
             base_config: BaseHeuristicConfig {
-                progressive_widening_initial_threshold: 0.837,
-                progressive_widening_decay_rate: 0.807,
-                early_cut_off_lower_bound: 0.161,
-                early_cut_off_upper_bound: 0.941,
+                progressive_widening_initial_threshold: 0.806,
+                progressive_widening_decay_rate: 0.739,
+                early_cut_off_lower_bound: 0.069,
+                early_cut_off_upper_bound: 0.982,
             },
-            control_base_weight: 0.573,
-            control_progress_offset: 0.271,
+            control_base_weight: 0.612,
+            control_progress_offset: 0.290,
             control_local_steepness: 0.15,
             control_global_steepness: 0.3,
-            meta_cell_big_threat: 3.931,
-            meta_cell_small_threat: 1.17,
+            meta_cell_big_threat: 3.882,
+            meta_cell_small_threat: 1.126,
             threat_steepness: 0.5,
-            constraint_factor: 1.291,
-            free_choice_constraint_factor: 1.344,
+            constraint_factor: 1.298,
+            free_choice_constraint_factor: 1.334,
             direct_loss_value: 0.0,
         }
     }

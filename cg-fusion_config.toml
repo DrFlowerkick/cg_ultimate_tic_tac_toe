@@ -75,9 +75,9 @@ include = [
     "new@impl<G,UP,UC,EP,H,SP> PlainMCTS<G,UP,UC,EP,H,SP> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,SP:SimulationPolicy<G,H>,",
     "new@impl<G,UP,UC,EP,H> PlainNode<G,UP,UC,EP,H> whereG:MCTSGame,UP:UCTPolicy<G>,UC:UTCCache<G,UP>,EP:ExpansionPolicy<G,H>,H:Heuristic<G>,",
     "new@impl<T:Default+Clone+Copy> MyMap3x3<T>",
+    "new_optimized@impl UltTTTHeuristicConfig",
+    "new_optimized@impl UltTTTMCTSConfig",
     "next_player@impl UltTTT",
-    "optimized@impl UltTTTHeuristicConfig",
-    "optimized@impl UltTTTMCTSConfig",
     "root_node",
     "set_cell",
     "set_cell_value",
@@ -141,5 +141,6 @@ exclude = [
     "impl<G:MCTSGame,H:Heuristic<G>> SimulationPolicy<G,H> for DefaultSimulationPolicy",
     "impl<G:MCTSGame,UP:UCTPolicy<G>> UTCCache<G,UP> for NoUTCCache",
     "impl<G:MCTSGame> ProgressiveWidening<G>",
-    "impl<G:MCTSGame> UCTPolicy<G> for StaticC"
+    "impl<G:MCTSGame> UCTPolicy<G> for StaticC",
+    "impl<GC:UltTTTGameCacheTrait+GameCache<UltTTT,UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>> for OldUltTTTHeuristic"
 ]

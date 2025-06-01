@@ -4,6 +4,8 @@ use super::*;
 use my_lib::my_optimizer::{
     increment_progress_counter_by, update_progress, ObjectiveFunction, ParamBound, ParamDescriptor,
 };
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 use tracing::{span, Level};
 use uuid::Uuid;
@@ -14,7 +16,7 @@ const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
 type UltTTTExpandAll = ExpandAll<UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>>;
 
 pub struct EarlyBreakOff {
-    pub num_initial_matches: usize,
+    pub num_check_matches: usize,
     pub score_threshold: f64,
 }
 
@@ -40,31 +42,26 @@ impl ObjectiveFunction for UltTTTObjectiveFunction {
         let _enter = span_search.enter();
 
         let mut sum_score: f64 = 0.0;
-        let mut num_early_matches = 0;
-        if let Some(ref ebo) = self.early_break_off {
-            sum_score += (0..ebo.num_initial_matches)
-                .map(|i| {
-                    update_progress(Some(self.estimated_num_of_steps), self.progress_step_size);
-                    run_match(config, i % 2 == 0)
-                })
-                .sum::<f64>();
-
-            let early_score = sum_score / (ebo.num_initial_matches as f64);
-            if early_score < ebo.score_threshold {
-                increment_progress_counter_by(self.num_matches);
-                tracing::debug!(eval_id, early_score, "Evaluation early cut-off.");
-                return Ok(early_score);
+        for i in 0..self.num_matches {
+            update_progress(Some(self.estimated_num_of_steps), self.progress_step_size);
+            let score = run_match(config, i % 2 == 0);
+            sum_score += score;
+            if let Some(ref ebo) = self.early_break_off {
+                let count_matches = i + 1;
+                if count_matches % ebo.num_check_matches == 0 && count_matches < self.num_matches {
+                    let early_score = sum_score / (count_matches as f64);
+                    let expected_threshold = ebo.score_threshold
+                        - 0.1 * (1.0 - count_matches as f64 / self.num_matches as f64);
+                    if early_score < expected_threshold {
+                        increment_progress_counter_by(self.num_matches - count_matches);
+                        tracing::debug!(eval_id, early_score, "Evaluation early cut-off.");
+                        return Ok(early_score);
+                    }
+                }
             }
-            num_early_matches = ebo.num_initial_matches;
         }
 
-        sum_score += (0..self.num_matches)
-            .map(|i| {
-                update_progress(Some(self.estimated_num_of_steps), self.progress_step_size);
-                run_match(config, i % 2 == 0)
-            })
-            .sum::<f64>();
-        let score = sum_score / (self.num_matches + num_early_matches) as f64;
+        let score = sum_score / self.num_matches as f64;
 
         tracing::debug!(eval_id, score, "Evaluation completed.");
 
@@ -223,6 +220,39 @@ impl From<Config> for Vec<f64> {
     }
 }
 
+impl Serialize for Config {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let values: Vec<f64> = (*self).into();
+        let names = Config::parameter_names();
+
+        if names.len() != values.len() {
+            return Err(serde::ser::Error::custom(
+                "Mismatched config name/value length",
+            ));
+        }
+
+        let map: BTreeMap<_, _> = names.into_iter().zip(values).collect();
+        map.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Config {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let map: BTreeMap<String, f64> = BTreeMap::deserialize(deserializer)?;
+        let names = Config::parameter_names();
+
+        let values: Vec<f64> = names
+            .iter()
+            .map(|key| map.get(key).cloned().unwrap_or(0.0))
+            .collect();
+
+        Config::try_from(&values[..]).map_err(serde::de::Error::custom)
+    }
+}
+
 impl Config {
     pub fn parameter_names() -> Vec<String> {
         vec![
@@ -270,8 +300,8 @@ impl Config {
                 meta_cell_big_threat: 2.0,
                 meta_cell_small_threat: 0.5,
                 threat_steepness: 0.1,
-                constraint_factor: 0.0,
-                free_choice_constraint_factor: 0.0,
+                constraint_factor: 0.1,
+                free_choice_constraint_factor: 0.1,
                 direct_loss_value: 0.0,
             },
         }
@@ -301,8 +331,8 @@ impl Config {
                 meta_cell_big_threat: 4.0,
                 meta_cell_small_threat: 1.5,
                 threat_steepness: 1.0,
-                constraint_factor: 1.0,
-                free_choice_constraint_factor: 1.0,
+                constraint_factor: 2.0,
+                free_choice_constraint_factor: 2.0,
                 direct_loss_value: 0.025,
             },
         }
@@ -321,6 +351,10 @@ impl Config {
                         bound: ParamBound::LogScale(min, max),
                     }
                 }
+                "direct_loss_value" => ParamDescriptor {
+                    name: name.to_owned(),
+                    bound: ParamBound::Static(0.0),
+                },
                 _ => ParamDescriptor {
                     name: name.to_owned(),
                     bound: ParamBound::MinMax(min, max),
