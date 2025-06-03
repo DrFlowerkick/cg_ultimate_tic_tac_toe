@@ -1,8 +1,10 @@
 // utilities for optimization
 
 use super::*;
+use anyhow::Context;
 use my_lib::my_optimizer::{
-    increment_progress_counter_by, update_progress, ObjectiveFunction, ParamBound, ParamDescriptor,
+    increment_progress_counter_by, update_progress, LogFormat, ObjectiveFunction, ParamBound,
+    ParamDescriptor,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
@@ -33,13 +35,28 @@ impl ObjectiveFunction for UltTTTObjectiveFunction {
     fn evaluate(&self, config: Config) -> anyhow::Result<f64> {
         let eval_id = Uuid::new_v4().to_string();
 
-        let span_search = span!(
-            Level::DEBUG,
-            "UltTTT Objective Function",
-            eval_id = eval_id,
-            ?config
-        );
+        let span_search = span!(Level::DEBUG, "UltTTT Objective Function", eval_id = eval_id,);
         let _enter = span_search.enter();
+        match LogFormat::get_global() {
+            Some(LogFormat::Json) => {
+                let json = serde_json::to_string(&config)
+                    .context("Failed to serialize candidate to JSON")?;
+                tracing::debug!(
+                    config = %json,
+                    "Starting evaluation of UltTTTObjectiveFunction"
+                );
+            }
+            Some(LogFormat::PlainText) => {
+                tracing::debug!(
+            config = ?config, "Starting evaluation of UltTTTObjectiveFunction");
+            }
+            None => {
+                println!(
+                    "Starting evaluation of UltTTTObjectiveFunction with config: {:?}",
+                    config
+                );
+            }
+        }
 
         let mut sum_score: f64 = 0.0;
         for i in 0..self.num_matches {
@@ -148,7 +165,7 @@ pub fn run_match(config: Config, heuristic_is_start_player: bool) -> f64 {
         as f64
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Config {
     pub mcts: UltTTTMCTSConfig,
     pub heuristic: UltTTTHeuristicConfig,
@@ -206,10 +223,10 @@ impl From<Config> for Vec<f64> {
             value.heuristic.base_config.progressive_widening_decay_rate as f64,
             value.heuristic.base_config.early_cut_off_lower_bound as f64,
             value.heuristic.base_config.early_cut_off_upper_bound as f64,
-            value.heuristic.control_local_steepness as f64,
-            value.heuristic.control_global_steepness as f64,
             value.heuristic.control_base_weight as f64,
             value.heuristic.control_progress_offset as f64,
+            value.heuristic.control_local_steepness as f64,
+            value.heuristic.control_global_steepness as f64,
             value.heuristic.meta_cell_big_threat as f64,
             value.heuristic.meta_cell_small_threat as f64,
             value.heuristic.threat_steepness as f64,
@@ -361,5 +378,28 @@ impl Config {
                 },
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config::default();
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: Config = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_config_bounds() {
+        let lower = Config::lower_bounds();
+        let upper = Config::upper_bounds();
+        assert!(
+            lower.mcts.base_config.exploration_constant
+                < upper.mcts.base_config.exploration_constant
+        );
     }
 }

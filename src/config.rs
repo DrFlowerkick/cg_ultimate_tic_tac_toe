@@ -2,7 +2,7 @@
 
 use super::*;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UltTTTMCTSConfig {
     pub base_config: BaseConfig,
 }
@@ -62,7 +62,7 @@ impl MCTSConfig for UltTTTMCTSConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UltTTTHeuristicConfig {
     pub base_config: BaseHeuristicConfig,
     pub control_base_weight: f32,
@@ -98,8 +98,8 @@ impl UltTTTHeuristicConfig {
             meta_cell_big_threat: 3.931,
             meta_cell_small_threat: 1.17,
             threat_steepness: 0.5,
-            constraint_factor: 0.291,
-            free_choice_constraint_factor: 0.344,
+            constraint_factor: 1.291,
+            free_choice_constraint_factor: 1.344,
             direct_loss_value: 0.0,
         }
     }

@@ -31,16 +31,36 @@ fn run() -> anyhow::Result<()> {
         .build_global()
         .unwrap();
 
-    info!("Starting UltTTT Evolutionary Optimize");
-
     let filename = "evolutionary_optimizer_results.csv";
     let population_size = 50;
+    let param_bounds = Config::param_bounds();
+
+    info!("Starting building initial population");
+    // Load initial population from file
+    let (base_population, parameter_names) = load_population::<&str, DefaultTolerance>(filename, true)?;
+    assert_eq!(parameter_names, Config::parameter_names());
+
+    let population_generator = UltTTTObjectiveFunction {
+        num_matches: 100,
+        early_break_off: Some(EarlyBreakOff {
+            num_check_matches: 10,
+            score_threshold: 0.5,
+        }),
+        progress_step_size: 10,
+        estimated_num_of_steps: 50 * 100, // 50 candidates and 100 matches
+    };
+
+    let initial_population = base_population.reevaluate_population(&population_generator, &param_bounds, None)?;
+
+    let initial_population = initial_population.resize_population(population_size, Some((&population_generator, &param_bounds)), None)?;
+    save_population(&initial_population, &parameter_names, filename, 3)?;
+    reset_progress_counter();
+
+    info!("Starting UltTTT Evolutionary Optimize");
 
     let (initial_population, parameter_names) = load_population(filename, true)?;
     assert_eq!(parameter_names, Config::parameter_names());
     assert_eq!(initial_population.size(), population_size);
-
-    let param_bounds = Config::param_bounds();
 
     let evolutionary_optimizer_configuration = EvolutionaryOptimizer::<
         ExponentialSchedule,
