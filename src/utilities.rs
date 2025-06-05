@@ -61,7 +61,7 @@ impl ObjectiveFunction for UltTTTObjectiveFunction {
         let mut sum_score: f64 = 0.0;
         for i in 0..self.num_matches {
             update_progress(Some(self.estimated_num_of_steps), self.progress_step_size);
-            let score = run_match(config, i % 2 == 0);
+            let (score, _, _) = run_match(config, i % 2 == 0);
             sum_score += score;
             if let Some(ref ebo) = self.early_break_off {
                 let count_matches = i + 1;
@@ -86,25 +86,32 @@ impl ObjectiveFunction for UltTTTObjectiveFunction {
     }
 }
 
-pub fn run_match(config: Config, heuristic_is_start_player: bool) -> f64 {
-    let mut first_mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGameNoGameCache,
-        DynamicC,
-        CachedUTC,
-        HPWDefaultTTTNoGameCache,
-        UltTTTHeuristic,
-        HeuristicCutoff,
-    > = PlainMCTS::new(config.mcts, config.heuristic);
+pub type UltTTTMCTSFirst = PlainMCTS<
+    UltTTTMCTSGameNoGameCache,
+    DynamicC,
+    CachedUTC,
+    HPWDefaultTTTNoGameCache,
+    UltTTTHeuristic,
+    HeuristicCutoff,
+>;
+pub type UltTTTMCTSSecond = PlainMCTS<
+    UltTTTMCTSGameNoGameCache,
+    DynamicC,
+    CachedUTC,
+    UltTTTExpandAll,
+    NoHeuristic,
+    DefaultSimulationPolicy,
+>;
+
+pub fn run_match(
+    config: Config,
+    heuristic_is_start_player: bool,
+) -> (f64, UltTTTMCTSFirst, UltTTTMCTSSecond) {
+    let mut first_mcts_ult_ttt: UltTTTMCTSFirst = PlainMCTS::new(config.mcts, config.heuristic);
     let mut first_ult_ttt_game_data = UltTTT::new();
     let mut first_time_out = TIME_OUT_FIRST_TURN;
-    let mut second_mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGameNoGameCache,
-        DynamicC,
-        CachedUTC,
-        UltTTTExpandAll,
-        NoHeuristic,
-        DefaultSimulationPolicy,
-    > = PlainMCTS::new(UltTTTMCTSConfig::default(), BaseHeuristicConfig::default());
+    let mut second_mcts_ult_ttt: UltTTTMCTSSecond =
+        PlainMCTS::new(UltTTTMCTSConfig::default(), BaseHeuristicConfig::default());
     let mut second_ult_ttt_game_data = UltTTT::new();
     let mut second_time_out = TIME_OUT_FIRST_TURN;
 
@@ -161,8 +168,12 @@ pub fn run_match(config: Config, heuristic_is_start_player: bool) -> f64 {
             first = true;
         }
     }
-    UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache).unwrap()
-        as f64
+    (
+        UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
+            .unwrap() as f64,
+        first_mcts_ult_ttt,
+        second_mcts_ult_ttt,
+    )
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

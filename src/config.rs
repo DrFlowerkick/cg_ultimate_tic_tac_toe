@@ -10,6 +10,7 @@ pub struct UltTTTMCTSConfig {
 // exploration_constant,progressive_widening_constant,progressive_widening_exponent,early_cut_off_depth,
 // old: 1.259,1.371,0.343,18.840,
 // new: 1.185,1.361,0.407,17.954,
+// intermediate: 1.778,1.652,0.333,15.361
 
 impl UltTTTMCTSConfig {
     pub fn optimized() -> Self {
@@ -25,10 +26,10 @@ impl UltTTTMCTSConfig {
     pub fn new_optimized() -> Self {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
-                exploration_constant: 1.185,
-                progressive_widening_constant: 1.361,
-                progressive_widening_exponent: 0.407,
-                early_cut_off_depth: 18,
+                exploration_constant: 1.778,
+                progressive_widening_constant: 1.652,
+                progressive_widening_exponent: 0.333,
+                early_cut_off_depth: 15,
             },
         }
     }
@@ -82,6 +83,8 @@ pub struct UltTTTHeuristicConfig {
 // old score: 0.835
 // new: 0.806,0.739,0.069,0.982,0.612,0.290,0.150,0.300,3.882,1.126,0.500,1.298,1.334,0.000
 // new score: 0.825
+// intermediate: 0.632,0.837,0.051,0.980,0.566,0.354,0.052,0.324,2.380,0.989,0.103,0.247,0.938,0.000
+// intermediate score: 0.845
 impl UltTTTHeuristicConfig {
     pub fn optimized() -> Self {
         UltTTTHeuristicConfig {
@@ -106,20 +109,20 @@ impl UltTTTHeuristicConfig {
     pub fn new_optimized() -> Self {
         UltTTTHeuristicConfig {
             base_config: BaseHeuristicConfig {
-                progressive_widening_initial_threshold: 0.806,
-                progressive_widening_decay_rate: 0.739,
-                early_cut_off_lower_bound: 0.069,
-                early_cut_off_upper_bound: 0.982,
+                progressive_widening_initial_threshold: 0.632,
+                progressive_widening_decay_rate: 0.837,
+                early_cut_off_lower_bound: 0.051,
+                early_cut_off_upper_bound: 0.980,
             },
-            control_base_weight: 0.612,
-            control_progress_offset: 0.290,
-            control_local_steepness: 0.15,
-            control_global_steepness: 0.3,
-            meta_cell_big_threat: 3.882,
-            meta_cell_small_threat: 1.126,
-            threat_steepness: 0.5,
-            constraint_factor: 1.298,
-            free_choice_constraint_factor: 1.334,
+            control_base_weight: 0.566,
+            control_progress_offset: 0.354,
+            control_local_steepness: 0.052,
+            control_global_steepness: 0.324,
+            meta_cell_big_threat: 2.380,
+            meta_cell_small_threat: 0.989,
+            threat_steepness: 0.103,
+            constraint_factor: 0.247,
+            free_choice_constraint_factor: 0.938,
             direct_loss_value: 0.0,
         }
     }

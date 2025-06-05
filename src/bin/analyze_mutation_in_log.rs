@@ -1,10 +1,10 @@
 // util to analyze mutation events in the log files
 
-use cg_ultimate_tic_tac_toe::{utilities::*, config::*};
+use cg_ultimate_tic_tac_toe::{config::*, utilities::*};
 use chrono::NaiveDate;
 use my_lib::my_optimizer::{
-    read_logs_from_dir, DefaultLogEntry, FileLogConfig, LogFormat,
-    ObjectiveFunction, TracingConfig, EvoFields, EvoSpan, MutationStats, analyze_evo_log_entries,
+    analyze_evo_log_entries, read_logs_from_dir, DefaultLogEntry, EvoFields, EvoSpan,
+    FileLogConfig, LogFormat, MutationStats, ObjectiveFunction, TracingConfig,
 };
 use tracing::{info, span, Level};
 
@@ -25,7 +25,8 @@ fn run() -> anyhow::Result<()> {
     )?;
     println!("Found {} log entries", log_entries.len());
 
-    let mutation_stats: MutationStats<UltTTTObjectiveFunction> = analyze_evo_log_entries(log_entries)?;
+    let mutation_stats: MutationStats<UltTTTObjectiveFunction> =
+        analyze_evo_log_entries(log_entries)?;
 
     let mut count_best_parent = 0;
     let mut best_parent_config: Option<Config> = None;
@@ -82,10 +83,7 @@ fn run() -> anyhow::Result<()> {
         heuristic: UltTTTHeuristicConfig::new_optimized(),
     };
 
-    println!(
-        "Correct Configuration for Evaluation: {:?}",
-        correct_config
-    );
+    println!("Correct Configuration for Evaluation: {:?}", correct_config);
 
     let best_parent_result = ult_ttt_objective_function.evaluate(correct_config)?;
 

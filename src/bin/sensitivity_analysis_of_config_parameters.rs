@@ -10,7 +10,7 @@ fn run_matches(config: Config, total_matches: usize) -> Vec<f64> {
         .into_par_iter()
         .map(|i| {
             let is_starting_player = i % 2 == 0;
-            run_match(config, is_starting_player)
+            run_match(config, is_starting_player).0
         })
         .collect()
 }

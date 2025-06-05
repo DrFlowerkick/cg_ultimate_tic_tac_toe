@@ -37,7 +37,8 @@ fn run() -> anyhow::Result<()> {
 
     info!("Starting building initial population");
     // Load initial population from file
-    let (base_population, parameter_names) = load_population::<&str, DefaultTolerance>(filename, true)?;
+    let (base_population, parameter_names) =
+        load_population::<&str, DefaultTolerance>(filename, true)?;
     assert_eq!(parameter_names, Config::parameter_names());
 
     let population_generator = UltTTTObjectiveFunction {
@@ -50,9 +51,14 @@ fn run() -> anyhow::Result<()> {
         estimated_num_of_steps: 50 * 100, // 50 candidates and 100 matches
     };
 
-    let initial_population = base_population.reevaluate_population(&population_generator, &param_bounds, None)?;
+    let initial_population =
+        base_population.reevaluate_population(&population_generator, &param_bounds, None)?;
 
-    let initial_population = initial_population.resize_population(population_size, Some((&population_generator, &param_bounds)), None)?;
+    let initial_population = initial_population.resize_population(
+        population_size,
+        Some((&population_generator, &param_bounds)),
+        None,
+    )?;
     save_population(&initial_population, &parameter_names, filename, 3)?;
     reset_progress_counter();
 
