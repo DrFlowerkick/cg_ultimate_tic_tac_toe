@@ -18,14 +18,14 @@ fn test_mcts_ult_ttt_no_game_cache() {
     let number_of_matches = 10;
     for i in 0..number_of_matches {
         eprintln!("________match {}________", i + 1);
-        let mut first_mcts_ult_ttt: PlainMCTS<
+        let mut first_mcts_ult_ttt: PlainMCTSWithTT<
             UltTTTMCTSGameNoGameCache,
             DynamicC,
             CachedUTC,
             HPWDefaultTTTNoGameCache,
             UltTTTHeuristic,
             HeuristicCutoff,
-        > = PlainMCTS::new(
+        > = PlainMCTSWithTT::new(
             UltTTTMCTSConfig::default(),
             UltTTTHeuristicConfig::default(),
         );
@@ -256,14 +256,14 @@ fn test_mcts_ult_ttt_new_vs_old_heuristic() {
     let number_of_matches = 100;
     for i in 0..number_of_matches {
         eprintln!("________match {}________", i + 1);
-        let mut first_mcts_ult_ttt: PlainMCTS<
+        let mut first_mcts_ult_ttt: PlainMCTSWithTT<
             UltTTTMCTSGameNoGameCache,
             DynamicC,
             CachedUTC,
             HPWDefaultTTTNoGameCache,
             UltTTTHeuristic,
             HeuristicCutoff,
-        > = PlainMCTS::new(
+        > = PlainMCTSWithTT::new(
             UltTTTMCTSConfig::new_optimized(),
             UltTTTHeuristicConfig::new_optimized(),
         );

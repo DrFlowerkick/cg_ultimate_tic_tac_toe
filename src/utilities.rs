@@ -86,7 +86,7 @@ impl ObjectiveFunction for UltTTTObjectiveFunction {
     }
 }
 
-pub type UltTTTMCTSFirst = PlainMCTS<
+pub type UltTTTMCTSFirst = PlainMCTSWithTT<
     UltTTTMCTSGameNoGameCache,
     DynamicC,
     CachedUTC,
@@ -107,7 +107,8 @@ pub fn run_match(
     config: Config,
     heuristic_is_start_player: bool,
 ) -> (f64, UltTTTMCTSFirst, UltTTTMCTSSecond) {
-    let mut first_mcts_ult_ttt: UltTTTMCTSFirst = PlainMCTS::new(config.mcts, config.heuristic);
+    let mut first_mcts_ult_ttt: UltTTTMCTSFirst =
+        PlainMCTSWithTT::new(config.mcts, config.heuristic);
     let mut first_ult_ttt_game_data = UltTTT::new();
     let mut first_time_out = TIME_OUT_FIRST_TURN;
     let mut second_mcts_ult_ttt: UltTTTMCTSSecond =

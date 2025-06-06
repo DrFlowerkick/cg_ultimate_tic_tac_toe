@@ -107,8 +107,8 @@ impl UltTTTMCTSConfig {
     fn new_optimized() -> Self {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
-                exploration_constant: 1.778,
-                progressive_widening_constant: 1.652,
+                exploration_constant: 1.298,
+                progressive_widening_constant: 1.602,
                 progressive_widening_exponent: 0.333,
                 early_cut_off_depth: 15,
             },
@@ -159,20 +159,20 @@ impl UltTTTHeuristicConfig {
     fn new_optimized() -> Self {
         UltTTTHeuristicConfig {
             base_config: BaseHeuristicConfig {
-                progressive_widening_initial_threshold: 0.632,
-                progressive_widening_decay_rate: 0.837,
-                early_cut_off_lower_bound: 0.051,
-                early_cut_off_upper_bound: 0.980,
+                progressive_widening_initial_threshold: 0.676,
+                progressive_widening_decay_rate: 0.814,
+                early_cut_off_lower_bound: 0.068,
+                early_cut_off_upper_bound: 0.947,
             },
-            control_base_weight: 0.566,
-            control_progress_offset: 0.354,
-            control_local_steepness: 0.052,
-            control_global_steepness: 0.324,
-            meta_cell_big_threat: 2.380,
-            meta_cell_small_threat: 0.989,
-            threat_steepness: 0.103,
-            constraint_factor: 0.247,
-            free_choice_constraint_factor: 0.938,
+            control_base_weight: 0.538,
+            control_progress_offset: 0.228,
+            control_local_steepness: 0.099,
+            control_global_steepness: 0.599,
+            meta_cell_big_threat: 2.143,
+            meta_cell_small_threat: 0.746,
+            threat_steepness: 0.171,
+            constraint_factor: 0.128,
+            free_choice_constraint_factor: 0.982,
             direct_loss_value: 0.0,
         }
     }
@@ -792,69 +792,95 @@ impl<T: Default + Clone + Copy> MyMap3x3<T> {
     }
 }
 use rand::prelude::IteratorRandom;
-struct PlainMCTS<G, UP, UC, EP, H, SP>
+type PlainMCTS<G, UP, UC, EP, H, SP> = BaseMCTS<
+    G,
+    PlainNode<G, UP, UC, EP, H>,
+    PlainTree<G, UP, UC, EP, H>,
+    UP,
+    UC,
+    EP,
+    H,
+    SP,
+    NoTranspositionTable,
+>;
+struct BaseMCTS<G, N, T, UP, UC, EP, H, SP, TT>
 where
     G: MCTSGame,
+    G::State: Eq + std::hash::Hash,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
     UP: UCTPolicy<G>,
     UC: UTCCache<G, UP>,
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
     SP: SimulationPolicy<G, H>,
+    TT: TranspositionTable<G, N, T, EP, H>,
 {
-    tree: PlainTree<G, UP, UC, EP, H>,
+    tree: T,
     mcts_config: G::Config,
     heuristic_config: H::Config,
     game_cache: G::Cache,
     heuristic_cache: H::Cache,
-    phantom: std::marker::PhantomData<(UP, UC, EP, SP)>,
+    transposition_table: TT,
+    phantom: std::marker::PhantomData<(N, UP, UC, EP, SP)>,
 }
-impl<G, UP, UC, EP, H, SP> PlainMCTS<G, UP, UC, EP, H, SP>
+impl<G, N, T, UP, UC, EP, H, SP, TT> BaseMCTS<G, N, T, UP, UC, EP, H, SP, TT>
 where
     G: MCTSGame,
+    G::State: Eq + std::hash::Hash,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
     UP: UCTPolicy<G>,
     UC: UTCCache<G, UP>,
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
     SP: SimulationPolicy<G, H>,
+    TT: TranspositionTable<G, N, T, EP, H>,
 {
     fn new(mcts_config: G::Config, heuristic_config: H::Config) -> Self {
         Self {
-            tree: PlainTree::<G, UP, UC, EP, H>::new(),
+            tree: T::new(),
             mcts_config,
             heuristic_config,
             game_cache: G::Cache::new(),
             heuristic_cache: H::Cache::new(),
+            transposition_table: TT::new(),
             phantom: std::marker::PhantomData,
         }
     }
 }
-impl<G, UP, UC, EP, H, SP> MCTSAlgo<G> for PlainMCTS<G, UP, UC, EP, H, SP>
+impl<G, N, T, UP, UC, EP, H, SP, TT> MCTSAlgo<G> for BaseMCTS<G, N, T, UP, UC, EP, H, SP, TT>
 where
     G: MCTSGame,
+    G::State: Eq + std::hash::Hash,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
     UP: UCTPolicy<G>,
     UC: UTCCache<G, UP>,
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
     SP: SimulationPolicy<G, H>,
+    TT: TranspositionTable<G, N, T, EP, H>,
 {
     fn set_root(&mut self, state: &G::State) -> bool {
         if let Some(root_id) = self.tree.root_id() {
+            if let Some(node_of_state_id) = self.transposition_table.get(state) {
+                self.tree.set_root(*node_of_state_id);
+                return true;
+            }
             if let Some((new_root_id, _)) = self
                 .tree
-                .get_node(root_id)
-                .get_children()
+                .get_children(root_id)
                 .iter()
-                .map(|&my_move_node_id| self.tree.get_node(my_move_node_id))
-                .flat_map(|my_move_node| {
-                    my_move_node
-                        .get_children()
-                        .iter()
-                        .map(|&opponent_move_node_id| {
+                .flat_map(|&(my_move_node_id, _)| {
+                    self.tree.get_children(my_move_node_id).iter().map(
+                        |&(opponent_move_node_id, _)| {
                             (
                                 opponent_move_node_id,
                                 self.tree.get_node(opponent_move_node_id).get_state(),
                             )
-                        })
+                        },
+                    )
                 })
                 .find(|(_, opponent_move_node_state)| *opponent_move_node_state == state)
             {
@@ -868,91 +894,110 @@ where
             &mut self.heuristic_cache,
             &self.heuristic_config,
         );
-        let new_root = PlainNode::root_node(state.clone(), expansion_policy);
-        self.tree.init_root(new_root);
+        let new_root = N::new(state.clone(), expansion_policy);
+        let root_id = self.tree.init_root(new_root);
+        self.transposition_table = TT::new();
+        self.transposition_table.insert(state.clone(), root_id);
         false
     }
     fn iterate(&mut self) {
-        let (tree, mcts_config, heuristic_config, game_cache, heuristic_cache) = (
+        let (tree, mcts_config, heuristic_config, game_cache, heuristic_cache, transposition_table) = (
             &mut self.tree,
             &self.mcts_config,
             &self.heuristic_config,
             &mut self.game_cache,
             &mut self.heuristic_cache,
+            &mut self.transposition_table,
         );
         let root_id = tree
             .root_id()
-            .expect("Root node must be initialized before iterating");
+            .expect("Tree root must be initialized before iterate.");
         let mut path = vec![root_id];
         let mut current_id = root_id;
-        while !tree.get_node(current_id).get_children().is_empty() {
-            let parent_visits = tree.get_node(current_id).get_visits();
-            let num_parent_children = tree.get_node(current_id).get_children().len();
-            if tree.get_node(current_id).expansion_policy().should_expand(
-                parent_visits,
-                num_parent_children,
-                mcts_config,
-                heuristic_config,
-            ) {
-                break;
-            }
-            let mut best_child_index: Option<_> = None;
-            let mut best_utc = f32::NEG_INFINITY;
-            for vec_index in 0..num_parent_children {
-                let child_index = tree.get_node(current_id).get_children()[vec_index];
-                let utc = tree.get_node_mut(child_index).calc_utc(
+        let mut new_children: Vec<T::ID> = Vec::new();
+        loop {
+            while !tree.get_children(current_id).is_empty() {
+                let parent_visits = tree.get_node(current_id).get_visits();
+                let num_parent_children = tree.get_children(current_id).len();
+                if tree.get_node(current_id).should_expand(
                     parent_visits,
-                    G::perspective_player(),
+                    num_parent_children,
                     mcts_config,
-                );
-                if utc > best_utc {
-                    best_utc = utc;
-                    best_child_index = Some(child_index);
+                    heuristic_config,
+                ) {
+                    break;
                 }
+                let mut best_child_index: Option<_> = None;
+                let mut best_utc = f32::NEG_INFINITY;
+                for vec_index in 0..num_parent_children {
+                    let (child_index, _) = tree.get_children(current_id)[vec_index];
+                    let utc = tree.get_node_mut(child_index).calc_utc(
+                        parent_visits,
+                        G::perspective_player(),
+                        mcts_config,
+                    );
+                    if utc > best_utc {
+                        best_utc = utc;
+                        best_child_index = Some(child_index);
+                    }
+                }
+                let best_child_index = best_child_index.expect("Could not find best child index.");
+                path.push(best_child_index);
+                current_id = best_child_index;
             }
-            let best_child_index = best_child_index.expect("Could not find best child index.");
-            path.push(best_child_index);
-            current_id = best_child_index;
+            if (tree.get_node(current_id).get_visits() == 0 && current_id != root_id)
+                || G::evaluate(tree.get_node(current_id).get_state(), game_cache).is_some()
+            {
+                break;
+            } else {
+                let num_parent_children = tree.get_children(current_id).len();
+                let expandable_moves = tree.get_node_mut(current_id).expandable_moves(
+                    num_parent_children,
+                    mcts_config,
+                    heuristic_config,
+                );
+                for mv in expandable_moves {
+                    let new_state =
+                        G::apply_move(tree.get_node(current_id).get_state(), &mv, game_cache);
+                    if let Some(&cached_node_id) = transposition_table.get(&new_state) {
+                        tree.link_child(current_id, mv, cached_node_id);
+                        let visits = tree.get_node(cached_node_id).get_visits();
+                        if visits == 0 {
+                            new_children.push(cached_node_id);
+                        } else {
+                            let get_accumulated_value =
+                                tree.get_node(cached_node_id).get_accumulated_value();
+                            back_propagation(tree, &path, get_accumulated_value / visits as f32);
+                        }
+                        continue;
+                    }
+                    let expansion_policy =
+                        EP::new(&new_state, game_cache, heuristic_cache, heuristic_config);
+                    let new_node = N::new(new_state.clone(), expansion_policy);
+                    let new_child_id = tree.add_child(current_id, mv, new_node);
+                    transposition_table.insert(new_state, new_child_id);
+                    new_children.push(new_child_id);
+                }
+                let Some (child_index) = new_children . get (0) else { continue ; } ;
+                path.push(*child_index);
+                current_id = *child_index;
+                break;
+            };
         }
-        let current_id = if (tree.get_node(current_id).get_visits() == 0 && current_id != root_id)
-            || G::evaluate(tree.get_node(current_id).get_state(), game_cache).is_some()
-        {
-            current_id
-        } else {
-            let num_parent_children = tree.get_node(current_id).get_children().len();
-            let expandable_moves = tree
-                .get_node_mut(current_id)
-                .expandable_moves(&self.mcts_config, heuristic_config);
-            for mv in expandable_moves {
-                let new_state =
-                    G::apply_move(tree.get_node(current_id).get_state(), &mv, game_cache);
-                let expansion_policy =
-                    EP::new(&new_state, game_cache, heuristic_cache, heuristic_config);
-                let new_node = PlainNode::new(new_state, mv, expansion_policy);
-                tree.add_child(current_id, new_node);
-            }
-            let child_index = tree
-                .get_node(current_id)
-                .get_children()
-                .get(num_parent_children)
-                .expect("No children at current node");
-            path.push(*child_index);
-            *child_index
-        };
         let mut current_state = tree.get_node(current_id).get_state().clone();
         let mut depth = 0;
         let simulation_result = loop {
-            if let Some(final_score) = G::evaluate(&current_state, &mut self.game_cache) {
+            if let Some(final_score) = G::evaluate(&current_state, game_cache) {
                 break final_score;
             }
             if let Some(heuristic) = SP::should_cutoff(
                 &current_state,
                 depth,
-                &mut self.game_cache,
-                &mut self.heuristic_cache,
+                game_cache,
+                heuristic_cache,
                 Some(G::perspective_player()),
-                &self.mcts_config,
-                &self.heuristic_config,
+                mcts_config,
+                heuristic_config,
             ) {
                 break heuristic;
             }
@@ -961,33 +1006,40 @@ where
                 &G::available_moves(&current_state)
                     .choose(&mut rand::thread_rng())
                     .expect("No available moves"),
-                &mut self.game_cache,
+                game_cache,
             );
             depth += 1;
         };
-        for &node_id in path.iter().rev() {
-            tree.get_node_mut(node_id).update_stats(simulation_result);
-        }
+        back_propagation(tree, &path, simulation_result);
     }
     fn select_move(&self) -> &G::Move {
         let root_id = self
             .tree
             .root_id()
             .expect("Root node must be initialized before selecting a move");
-        let move_id = self
+        let (_, mv) = self
             .tree
-            .get_node(root_id)
-            .get_children()
+            .get_children(root_id)
             .iter()
-            .max_by_key(|&&child_id| self.tree.get_node(child_id).get_visits())
+            .max_by_key(|&&(child_id, _)| self.tree.get_node(child_id).get_visits())
             .expect("could not find move id");
-        self.tree
-            .get_node(*move_id)
-            .get_move()
-            .expect("node did not contain move")
+        mv
+    }
+}
+fn back_propagation<G, N, T, EP, H>(tree: &mut T, path: &[T::ID], result: f32)
+where
+    G: MCTSGame,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
+    EP: ExpansionPolicy<G, H>,
+    H: Heuristic<G>,
+{
+    for &node_id in path.iter().rev() {
+        tree.get_node_mut(node_id).update_stats(result);
     }
 }
 use rand::prelude::SliceRandom;
+use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BaseConfig {
     exploration_constant: f32,
@@ -1250,6 +1302,52 @@ impl<G: MCTSGame> Heuristic<G> for NoHeuristic {
         0.0
     }
 }
+struct NoTranspositionTable {}
+impl<G, N, T, EP, H> TranspositionTable<G, N, T, EP, H> for NoTranspositionTable
+where
+    G: MCTSGame,
+    G::State: Eq + std::hash::Hash,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
+    EP: ExpansionPolicy<G, H>,
+    H: Heuristic<G>,
+{
+    fn new() -> Self {
+        NoTranspositionTable {}
+    }
+}
+struct TranspositionHashMap<G, N, T, EP, H>
+where
+    G: MCTSGame,
+    G::State: Eq + std::hash::Hash,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
+    EP: ExpansionPolicy<G, H>,
+    H: Heuristic<G>,
+{
+    table: HashMap<G::State, T::ID>,
+}
+impl<G, N, T, EP, H> TranspositionTable<G, N, T, EP, H> for TranspositionHashMap<G, N, T, EP, H>
+where
+    G: MCTSGame,
+    G::State: Eq + std::hash::Hash,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
+    EP: ExpansionPolicy<G, H>,
+    H: Heuristic<G>,
+{
+    fn new() -> Self {
+        Self {
+            table: HashMap::new(),
+        }
+    }
+    fn get(&self, state: &<G as MCTSGame>::State) -> Option<&T::ID> {
+        self.table.get(state)
+    }
+    fn insert(&mut self, state: <G as MCTSGame>::State, value: T::ID) {
+        self.table.insert(state, value);
+    }
+}
 struct PlainNode<G, UP, UC, EP, H>
 where
     G: MCTSGame,
@@ -1261,8 +1359,6 @@ where
     state: G::State,
     visits: usize,
     accumulated_value: f32,
-    mv: Option<G::Move>,
-    children: Vec<usize>,
     utc_cache: UC,
     expansion_policy: EP,
     phantom: std::marker::PhantomData<(UP, H)>,
@@ -1275,45 +1371,18 @@ where
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
 {
-    type ID = usize;
-    fn init_root_id() -> Self::ID {
-        0
-    }
-    fn root_node(state: G::State, expansion_policy: EP) -> Self {
+    fn new(state: G::State, expansion_policy: EP) -> Self {
         PlainNode {
             expansion_policy,
             state,
             visits: 0,
             accumulated_value: 0.0,
-            mv: None,
-            children: vec![],
             utc_cache: UC::new(),
             phantom: std::marker::PhantomData,
         }
-    }
-    fn new(state: G::State, mv: G::Move, expansion_policy: EP) -> Self {
-        PlainNode {
-            expansion_policy,
-            state,
-            visits: 0,
-            accumulated_value: 0.0,
-            mv: Some(mv),
-            children: vec![],
-            utc_cache: UC::new(),
-            phantom: std::marker::PhantomData,
-        }
-    }
-    fn add_child(&mut self, child_id: Self::ID) {
-        self.children.push(child_id);
-    }
-    fn get_children(&self) -> &[Self::ID] {
-        &self.children[..]
     }
     fn get_state(&self) -> &G::State {
         &self.state
-    }
-    fn get_move(&self) -> Option<&G::Move> {
-        self.mv.as_ref()
     }
     fn get_visits(&self) -> usize {
         self.visits
@@ -1353,14 +1422,23 @@ where
             .get_exploration(self.visits, parent_visits, mcts_config);
         exploitation + exploration
     }
-    fn expansion_policy(&self) -> &EP {
-        &self.expansion_policy
-    }
-    fn expansion_policy_mut(&mut self) -> &mut EP {
-        &mut self.expansion_policy
+    fn should_expand(
+        &self,
+        visits: usize,
+        num_parent_children: usize,
+        mcts_config: &G::Config,
+        heuristic_config: &H::Config,
+    ) -> bool {
+        self.expansion_policy.should_expand(
+            visits,
+            num_parent_children,
+            mcts_config,
+            heuristic_config,
+        )
     }
     fn expandable_moves(
         &mut self,
+        num_parent_children: usize,
         mcts_config: &G::Config,
         heuristic_config: &H::Config,
     ) -> Vec<G::Move> {
@@ -1368,7 +1446,7 @@ where
             .expansion_policy
             .expandable_moves(
                 self.visits,
-                self.children.len(),
+                num_parent_children,
                 &self.state,
                 mcts_config,
                 heuristic_config,
@@ -1404,20 +1482,38 @@ trait MCTSGame: Sized {
     fn last_player(state: &Self::State) -> Self::Player;
     fn perspective_player() -> Self::Player;
 }
-trait MCTSTree<G, N, EP, H>: Sized
+trait MCTSTree<G, N, EP, H>
 where
     G: MCTSGame,
     N: MCTSNode<G, EP, H>,
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
 {
+    type ID: Copy + Eq + std::fmt::Debug;
     fn new() -> Self;
-    fn init_root(&mut self, root_value: N);
-    fn set_root(&mut self, new_root_id: N::ID);
-    fn root_id(&self) -> Option<N::ID>;
-    fn get_node(&self, id: N::ID) -> &N;
-    fn get_node_mut(&mut self, id: N::ID) -> &mut N;
-    fn add_child(&mut self, parent_id: N::ID, child_value: N) -> N::ID;
+    fn init_root(&mut self, root_value: N) -> Self::ID;
+    fn set_root(&mut self, new_root_id: Self::ID);
+    fn root_id(&self) -> Option<Self::ID>;
+    fn get_node(&self, id: Self::ID) -> &N;
+    fn get_node_mut(&mut self, id: Self::ID) -> &mut N;
+    fn add_child(&mut self, parent_id: Self::ID, mv: G::Move, child_value: N) -> Self::ID;
+    fn link_child(&mut self, parent_id: Self::ID, mv: G::Move, child_id: Self::ID);
+    fn get_children(&self, id: Self::ID) -> &[(Self::ID, G::Move)];
+}
+trait TranspositionTable<G, N, T, EP, H>
+where
+    G: MCTSGame,
+    G::State: Eq + std::hash::Hash,
+    N: MCTSNode<G, EP, H>,
+    T: MCTSTree<G, N, EP, H>,
+    EP: ExpansionPolicy<G, H>,
+    H: Heuristic<G>,
+{
+    fn new() -> Self;
+    fn get(&self, _state: &G::State) -> Option<&T::ID> {
+        None
+    }
+    fn insert(&mut self, _state: G::State, _value: T::ID) {}
 }
 trait MCTSNode<G: MCTSGame, EP: ExpansionPolicy<G, H>, H: Heuristic<G>>
 where
@@ -1425,16 +1521,8 @@ where
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
 {
-    type ID: Copy + Eq + std::fmt::Debug;
-    fn init_root_id() -> Self::ID;
-    fn root_node(state: G::State, expansion_policy: EP) -> Self;
-    fn new(state: G::State, mv: G::Move, expansion_policy: EP) -> Self;
-    fn add_child(&mut self, child_id: Self::ID);
-    fn get_children(&self) -> &[Self::ID];
+    fn new(state: G::State, expansion_policy: EP) -> Self;
     fn get_state(&self) -> &G::State;
-    fn get_move(&self) -> Option<&G::Move> {
-        None
-    }
     fn get_visits(&self) -> usize;
     fn get_accumulated_value(&self) -> f32;
     fn update_stats(&mut self, result: f32);
@@ -1444,10 +1532,16 @@ where
         perspective_player: G::Player,
         mcts_config: &G::Config,
     ) -> f32;
-    fn expansion_policy(&self) -> &EP;
-    fn expansion_policy_mut(&mut self) -> &mut EP;
+    fn should_expand(
+        &self,
+        visits: usize,
+        num_parent_children: usize,
+        mcts_config: &G::Config,
+        heuristic_config: &H::Config,
+    ) -> bool;
     fn expandable_moves(
         &mut self,
+        num_parent_children: usize,
         mcts_config: &G::Config,
         heuristic_config: &H::Config,
     ) -> Vec<G::Move>;
@@ -1601,62 +1695,75 @@ trait HeuristicCache<State, Move> {
     }
     fn insert_move_score(&mut self, _state: &State, _mv: &Move, _score: f32) {}
 }
-struct PlainTree<G, UP, UC, EP, H>
+type PlainTree<G, UP, UC, EP, H> = BaseTree<G, PlainNode<G, UP, UC, EP, H>, EP, H>;
+struct BaseTree<G, N, EP, H>
 where
     G: MCTSGame,
-    UP: UCTPolicy<G>,
-    UC: UTCCache<G, UP>,
+    N: MCTSNode<G, EP, H>,
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
 {
-    nodes: Vec<PlainNode<G, UP, UC, EP, H>>,
+    nodes: Vec<N>,
+    edges: Vec<Vec<(usize, G::Move)>>,
     root_id: usize,
-    phantom: std::marker::PhantomData<(G, EP, H)>,
+    phantom: std::marker::PhantomData<(G, N, EP, H)>,
 }
-impl<G, UP, UC, EP, H> MCTSTree<G, PlainNode<G, UP, UC, EP, H>, EP, H>
-    for PlainTree<G, UP, UC, EP, H>
+impl<G, N, EP, H> MCTSTree<G, N, EP, H> for BaseTree<G, N, EP, H>
 where
     G: MCTSGame,
-    UP: UCTPolicy<G>,
-    UC: UTCCache<G, UP>,
+    N: MCTSNode<G, EP, H>,
     EP: ExpansionPolicy<G, H>,
     H: Heuristic<G>,
 {
+    type ID = usize;
     fn new() -> Self {
-        let root_id = PlainNode::<G, UP, UC, EP, H>::init_root_id();
-        let nodes = vec![];
-        PlainTree {
-            nodes,
-            root_id,
+        BaseTree {
+            nodes: vec![],
+            edges: vec![],
+            root_id: 0,
             phantom: std::marker::PhantomData,
         }
     }
-    fn init_root(&mut self, root_value: PlainNode<G, UP, UC, EP, H>) {
+    fn init_root(&mut self, root_value: N) -> Self::ID {
         self.nodes.clear();
+        self.edges.clear();
         self.nodes.push(root_value);
-        self.root_id = PlainNode::<G, UP, UC, EP, H>::init_root_id();
+        self.edges.push(vec![]);
+        self.root_id = 0;
+        self.root_id
     }
-    fn set_root(&mut self, new_root_id: usize) {
+    fn set_root(&mut self, new_root_id: Self::ID) {
         self.root_id = new_root_id;
     }
-    fn root_id(&self) -> Option<usize> {
+    fn root_id(&self) -> Option<Self::ID> {
         if self.nodes.is_empty() {
             None
         } else {
             Some(self.root_id)
         }
     }
-    fn get_node(&self, id: usize) -> &PlainNode<G, UP, UC, EP, H> {
+    fn get_node(&self, id: Self::ID) -> &N {
         &self.nodes[id]
     }
-    fn get_node_mut(&mut self, id: usize) -> &mut PlainNode<G, UP, UC, EP, H> {
+    fn get_node_mut(&mut self, id: Self::ID) -> &mut N {
         &mut self.nodes[id]
     }
-    fn add_child(&mut self, parent_id: usize, child_value: PlainNode<G, UP, UC, EP, H>) -> usize {
+    fn add_child(&mut self, parent_id: Self::ID, mv: G::Move, child_value: N) -> usize {
         let child_id = self.nodes.len();
-        self.get_node_mut(parent_id).add_child(child_id);
         self.nodes.push(child_value);
+        self.edges.push(vec![]);
+        self.link_child(parent_id, mv, child_id);
         child_id
+    }
+    fn link_child(&mut self, parent_id: Self::ID, mv: <G as MCTSGame>::Move, child_id: Self::ID) {
+        let edge = self
+            .edges
+            .get_mut(parent_id)
+            .expect("Expected edges of parent.");
+        edge.push((child_id, mv));
+    }
+    fn get_children(&self, id: Self::ID) -> &[(Self::ID, <G as MCTSGame>::Move)] {
+        &self.edges[id][..]
     }
 }
 impl MCTSPlayer for TicTacToeStatus {

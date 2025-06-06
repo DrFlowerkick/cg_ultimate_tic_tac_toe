@@ -107,7 +107,7 @@ fn collect_nodes_of_same_tree_level_first(
     } else {
         nodes_of_same_tree_level.insert(level, vec![index]);
     }
-    for child in mcts.tree.nodes[index].get_children() {
+    for (child, _) in mcts.tree.get_children(index) {
         collect_nodes_of_same_tree_level_first(mcts, *child, level + 1, nodes_of_same_tree_level);
     }
 }
@@ -123,7 +123,7 @@ fn collect_nodes_of_same_tree_level_second(
     } else {
         nodes_of_same_tree_level.insert(level, vec![index]);
     }
-    for child in mcts.tree.nodes[index].get_children() {
+    for (child, _) in mcts.tree.get_children(index) {
         collect_nodes_of_same_tree_level_second(mcts, *child, level + 1, nodes_of_same_tree_level);
     }
 }

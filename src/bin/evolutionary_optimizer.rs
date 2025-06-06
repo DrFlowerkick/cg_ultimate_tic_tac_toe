@@ -17,7 +17,7 @@ fn run() -> anyhow::Result<()> {
         console_format: LogFormat::PlainText,
         file_log: Some(FileLogConfig {
             directory: ".",
-            prefix: "evolutionary_optimizer_log".into(),
+            prefix: "evolutionary_optimizer_02_log".into(),
             format: LogFormat::Json,
         }),
     }
@@ -31,9 +31,14 @@ fn run() -> anyhow::Result<()> {
         .build_global()
         .unwrap();
 
-    let filename = "evolutionary_optimizer_results.csv";
+    let filename = "evolutionary_optimizer_results_02.csv";
     let population_size = 50;
     let param_bounds = Config::param_bounds();
+    let population_saver = Some(PopulationSaver {
+        file_path: filename.into(),
+        step_size: 5,
+        precision: 3,
+    });
 
     info!("Starting building initial population");
     // Load initial population from file
@@ -51,13 +56,16 @@ fn run() -> anyhow::Result<()> {
         estimated_num_of_steps: 50 * 100, // 50 candidates and 100 matches
     };
 
-    let initial_population =
-        base_population.reevaluate_population(&population_generator, &param_bounds, None)?;
+    let initial_population = base_population.reevaluate_population(
+        &population_generator,
+        &param_bounds,
+        population_saver.clone(),
+    )?;
 
     let initial_population = initial_population.resize_population(
         population_size,
         Some((&population_generator, &param_bounds)),
-        None,
+        population_saver.clone(),
     )?;
     save_population(&initial_population, &parameter_names, filename, 3)?;
     reset_progress_counter();
@@ -92,11 +100,7 @@ fn run() -> anyhow::Result<()> {
             exponent: 2.0,
         },
         initial_population,
-        population_saver: Some(PopulationSaver {
-            file_path: filename.into(),
-            step_size: 10,
-            precision: 3,
-        }),
+        population_saver,
     };
 
     let evolutionary_optimizer_evaluation = UltTTTObjectiveFunction {
