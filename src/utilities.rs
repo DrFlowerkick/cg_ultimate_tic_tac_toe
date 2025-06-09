@@ -134,13 +134,16 @@ pub fn run_match(
         second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
         false
     };
-
+    let mut turn_counter = 0;
     while UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
         .is_none()
     {
+        turn_counter += 1;
         if first {
             let start = Instant::now();
-            first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data);
+            if !first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data) && turn_counter > 2 {
+                tracing::debug!(heuristic_is_start_player, turn_counter, "Reset tree root of first.");
+            }
             while start.elapsed() < first_time_out {
                 first_mcts_ult_ttt.iterate();
             }
@@ -159,7 +162,9 @@ pub fn run_match(
             first = false;
         } else {
             let start = Instant::now();
-            second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data);
+            if !second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data) && turn_counter > 2 {
+                tracing::debug!(heuristic_is_start_player, turn_counter, "Reset tree root of second.");
+            }
             while start.elapsed() < second_time_out {
                 second_mcts_ult_ttt.iterate();
             }
@@ -321,7 +326,7 @@ impl Config {
                     exploration_constant: 1.0,
                     progressive_widening_constant: 1.0,
                     progressive_widening_exponent: 1.0 / 3.0,
-                    early_cut_off_depth: 15,
+                    early_cut_off_depth: 10,
                 },
             },
             heuristic: UltTTTHeuristicConfig {

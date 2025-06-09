@@ -28,7 +28,7 @@ macro_rules! parse_input {
 
 fn main() {
     let time_out_first_turn = Duration::from_millis(990);
-    let time_out_successive_turns = Duration::from_millis(90);
+    //let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: PlainMCTS<
@@ -72,9 +72,12 @@ fn main() {
         }
     });
 
+    let mut turn_counter = 0;
+
     let (opponent_row, opponent_col) = rx.recv().expect("Failed to receive initial input");
     // check if opponent is starting_player
     if opponent_row >= 0 {
+        turn_counter += 1;
         game_data.set_current_player(TicTacToeStatus::Opp);
         let opp_action = (opponent_col as u8, opponent_row as u8);
         game_data = UltTTTMCTSGame::apply_move(
@@ -84,38 +87,35 @@ fn main() {
         );
     }
 
-    // time out for first turn
-    let mut time_out = time_out_first_turn;
+    // First turn MCTS
+    // set root to initial state or to opponent move
+    mcts_ult_ttt.set_root(&game_data);
+    let start = Instant::now();
+    let mut number_of_iterations = 0;
+    while start.elapsed() < time_out_first_turn {
+        mcts_ult_ttt.iterate();
+        number_of_iterations += 1;
+    }
+    eprintln!("Iterations of first turn: {}", number_of_iterations);
 
     // game loop
     loop {
-        // set root to either initial game data or to last opponent move
-        mcts_ult_ttt.set_root(&game_data);
-        // start MCTS iterations
-        let start = Instant::now();
-        let mut number_of_iterations = 0;
-        while start.elapsed() < time_out {
-            mcts_ult_ttt.iterate();
-            number_of_iterations += 1;
-        }
-        eprintln!("Iterations: {}", number_of_iterations);
-        // set timeout for all following turns
-        time_out = time_out_successive_turns;
-
+        turn_counter += 1;
         // select my move and send it to codingame
         let selected_move = *mcts_ult_ttt.select_move();
         game_data =
             UltTTTMCTSGame::apply_move(&game_data, &selected_move, &mut mcts_ult_ttt.game_cache);
         selected_move.execute_action();
-        // set root to my move
-        mcts_ult_ttt.set_root(&game_data);
-
-        // use Pre-Filling until new input from codingame arrives
+        // set root to my move; we expect to always find root, since we selected move from existing nodes
+        assert!(mcts_ult_ttt.set_root(&game_data));
+        // iterate until new input from codingame arrives
         let start = Instant::now();
         number_of_iterations = 0;
         loop {
             match rx.try_recv() {
                 Ok((opponent_row, opponent_col)) => {
+                    eprintln!("time of iterations: {:?}", start.elapsed());
+                    turn_counter += 1;
                     // codingame input received
                     let opp_action = (opponent_col as u8, opponent_row as u8);
                     game_data = UltTTTMCTSGame::apply_move(
@@ -123,10 +123,14 @@ fn main() {
                         &UltTTTMove::try_from(opp_action).unwrap(),
                         &mut mcts_ult_ttt.game_cache,
                     );
+                    // set root to opponent move
+                    if !mcts_ult_ttt.set_root(&game_data) {
+                        eprintln!("Reset root after opponent move in turn {}.", turn_counter);
+                    }
                     break;
                 }
                 Err(mpsc::TryRecvError::Empty) => {
-                    // no codingame input yet
+                    // expand mcts tree until new input is received
                     mcts_ult_ttt.iterate();
                     number_of_iterations += 1;
                     if start.elapsed() > time_out_codingame_input {
@@ -138,6 +142,6 @@ fn main() {
                 }
             }
         }
-        eprintln!("Pre-Fill Iterations: {}", number_of_iterations);
+        eprintln!("Iterations of successive turns: {}", number_of_iterations);
     }
 }

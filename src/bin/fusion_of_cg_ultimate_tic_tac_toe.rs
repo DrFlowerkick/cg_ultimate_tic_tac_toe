@@ -10,7 +10,6 @@ macro_rules! parse_input {
 }
 fn main() {
     let time_out_first_turn = Duration::from_millis(990);
-    let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: PlainMCTS<
@@ -47,8 +46,10 @@ fn main() {
             let _col = parse_input!(inputs[1], i32);
         }
     });
+    let mut turn_counter = 0;
     let (opponent_row, opponent_col) = rx.recv().expect("Failed to receive initial input");
     if opponent_row >= 0 {
+        turn_counter += 1;
         game_data.set_current_player(TicTacToeStatus::Opp);
         let opp_action = (opponent_col as u8, opponent_row as u8);
         game_data = UltTTTMCTSGame::apply_move(
@@ -57,17 +58,16 @@ fn main() {
             &mut mcts_ult_ttt.game_cache,
         );
     }
-    let mut time_out = time_out_first_turn;
+    mcts_ult_ttt.set_root(&game_data);
+    let start = Instant::now();
+    let mut number_of_iterations = 0;
+    while start.elapsed() < time_out_first_turn {
+        mcts_ult_ttt.iterate();
+        number_of_iterations += 1;
+    }
+    eprintln!("Iterations of first turn: {}", number_of_iterations);
     loop {
-        mcts_ult_ttt.set_root(&game_data);
-        let start = Instant::now();
-        let mut number_of_iterations = 0;
-        while start.elapsed() < time_out {
-            mcts_ult_ttt.iterate();
-            number_of_iterations += 1;
-        }
-        eprintln!("Iterations: {}", number_of_iterations);
-        time_out = time_out_successive_turns;
+        turn_counter += 1;
         let selected_move = *mcts_ult_ttt.select_move();
         game_data =
             UltTTTMCTSGame::apply_move(&game_data, &selected_move, &mut mcts_ult_ttt.game_cache);
@@ -78,12 +78,16 @@ fn main() {
         loop {
             match rx.try_recv() {
                 Ok((opponent_row, opponent_col)) => {
+                    turn_counter += 1;
                     let opp_action = (opponent_col as u8, opponent_row as u8);
                     game_data = UltTTTMCTSGame::apply_move(
                         &game_data,
                         &UltTTTMove::try_from(opp_action).unwrap(),
                         &mut mcts_ult_ttt.game_cache,
                     );
+                    if !mcts_ult_ttt.set_root(&game_data) {
+                        eprintln!("Reset root after opponent move in turn {}.", turn_counter);
+                    }
                     break;
                 }
                 Err(mpsc::TryRecvError::Empty) => {
@@ -98,7 +102,7 @@ fn main() {
                 }
             }
         }
-        eprintln!("Pre-Fill Iterations: {}", number_of_iterations);
+        eprintln!("Iterations of successive turns: {}", number_of_iterations);
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -771,7 +775,7 @@ where
         self.table.get(state)
     }
     fn insert(&mut self, state: State, value: ID) {
-        self.table.insert(state, value);
+        assert!(self.table.insert(state, value).is_none());
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1064,21 +1068,29 @@ where
                 self.tree.set_root(*node_of_state_id);
                 return true;
             }
-            if let Some((new_root_id, _)) = self
-                .tree
-                .get_children(root_id)
-                .iter()
-                .flat_map(|&(my_move_node_id, _)| {
-                    self.tree.get_children(my_move_node_id).iter().map(
-                        |&(opponent_move_node_id, _)| {
-                            (
-                                opponent_move_node_id,
-                                self.tree.get_node(opponent_move_node_id).get_state(),
+            if let Some((new_root_id, _)) =
+                self.tree
+                    .get_children(root_id)
+                    .iter()
+                    .map(|&(my_move_node_id, _)| {
+                        (
+                            my_move_node_id,
+                            self.tree.get_node(my_move_node_id).get_state(),
+                        )
+                    })
+                    .chain(self.tree.get_children(root_id).iter().flat_map(
+                        |&(my_move_node_id, _)| {
+                            self.tree.get_children(my_move_node_id).iter().map(
+                                |&(opponent_move_node_id, _)| {
+                                    (
+                                        opponent_move_node_id,
+                                        self.tree.get_node(opponent_move_node_id).get_state(),
+                                    )
+                                },
                             )
                         },
-                    )
-                })
-                .find(|(_, opponent_move_node_state)| *opponent_move_node_state == state)
+                    ))
+                    .find(|(_, move_node_state)| *move_node_state == state)
             {
                 self.tree.set_root(new_root_id);
                 return true;
