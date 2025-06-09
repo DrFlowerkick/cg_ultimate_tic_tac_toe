@@ -1,6 +1,6 @@
 // configuration of UltTTT for MCTS and heuristic
 
-use super::*;
+use my_lib::my_mcts::{BaseConfig, BaseHeuristicConfig, HeuristicConfig, MCTSConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UltTTTMCTSConfig {

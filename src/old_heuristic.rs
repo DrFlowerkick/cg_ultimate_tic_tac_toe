@@ -1,6 +1,14 @@
 // heuristic of UltTTT
 
-use super::*;
+use super::{
+    NextActionConstraint, UltTTT, UltTTTGameCacheTrait, UltTTTHeuristicConfig, UltTTTMCTSGame,
+    UltTTTMove,
+};
+use my_lib::{
+    my_mcts::{Heuristic, HeuristicCache, MCTSGame, NoHeuristicCache},
+    my_tic_tac_toe::TicTacToeStatus,
+};
+
 pub struct OldUltTTTHeuristic {}
 
 impl OldUltTTTHeuristic {
@@ -20,17 +28,15 @@ impl OldUltTTTHeuristic {
     }
 }
 
-impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>>
-    for OldUltTTTHeuristic
-{
+impl Heuristic<UltTTTMCTSGame> for OldUltTTTHeuristic {
     type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
     type Config = UltTTTHeuristicConfig;
 
     fn evaluate_state(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
         heuristic_cache: &mut Self::Cache,
-        perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
+        perspective_player: Option<<UltTTTMCTSGame as MCTSGame>::Player>,
         heuristic_config: &Self::Config,
     ) -> f32 {
         // If perspective_player is not last_player, we need to invert heuristic score
@@ -176,9 +182,9 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
     }
 
     fn evaluate_move(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        mv: &<UltTTTMCTSGame<GC> as MCTSGame>::Move,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        mv: &<UltTTTMCTSGame as MCTSGame>::Move,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
         heuristic_cache: &mut Self::Cache,
         heuristic_config: &Self::Config,
     ) -> f32 {

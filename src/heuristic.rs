@@ -1,6 +1,11 @@
 // heuristic of UltTTT
 
-use super::*;
+use super::{NextActionConstraint, UltTTT, UltTTTHeuristicConfig, UltTTTMCTSGame, UltTTTMove};
+use my_lib::{
+    my_map_3x3::CellIndex3x3,
+    my_mcts::{Heuristic, HeuristicCache, MCTSGame, NoHeuristicCache},
+    my_tic_tac_toe::TicTacToeStatus,
+};
 use std::collections::HashSet;
 
 pub struct UltTTTHeuristic {}
@@ -78,17 +83,15 @@ impl UltTTTHeuristic {
     }
 }
 
-impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTMCTSGame<GC>>
-    for UltTTTHeuristic
-{
+impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
     type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
     type Config = UltTTTHeuristicConfig;
 
     fn evaluate_state(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
         heuristic_cache: &mut Self::Cache,
-        perspective_player: Option<<UltTTTMCTSGame<GC> as MCTSGame>::Player>,
+        perspective_player: Option<<UltTTTMCTSGame as MCTSGame>::Player>,
         heuristic_config: &Self::Config,
     ) -> f32 {
         // If perspective_player is not last_player, we need to invert heuristic score
@@ -119,8 +122,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 let mut opp_threat_sum = 0.0;
 
                 // threats on status map
-                let (my_meta_threats, opp_meta_threats) =
-                    game_cache.get_board_threats(&state.status_map);
+                let (my_meta_threats, opp_meta_threats) = state.status_map.get_threats();
 
                 for (status_index, status) in state.status_map.iter_map() {
                     match status {
@@ -140,7 +142,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                             // vacant mini board: get control and threats
                             // mini board control
                             let (my_control, opp_control) =
-                                game_cache.get_board_control(state.map.get_cell(status_index));
+                                state.map.get_cell(status_index).get_board_control();
                             let my_control_score = UltTTTHeuristic::normalized_tanh(
                                 my_control,
                                 opp_control,
@@ -152,7 +154,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
 
                             // mini board threats
                             let (my_threats, opp_threats) =
-                                game_cache.get_board_threats(state.map.get_cell(status_index));
+                                state.map.get_cell(status_index).get_threats();
                             // cell weight
                             let cell_weight = status_index.cell_weight();
                             // meta factors
@@ -161,7 +163,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                                 mum_my_meta_small_threats,
                                 num_opp_meta_threats,
                                 num_opp_meta_small_threats,
-                            ) = game_cache.get_meta_cell_threats(&state.status_map, status_index);
+                            ) = state.status_map.get_meta_cell_threats(status_index);
                             let my_meta_factor = 1.0
                                 + heuristic_config.meta_cell_big_threat
                                     * num_my_meta_threats as f32
@@ -242,7 +244,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
                 }
 
                 // meta progress: wins on status_map
-                let (_, _, played_cells) = game_cache.get_board_progress(&state.status_map);
+                let played_cells = state.status_map.count_non_vacant_cells();
 
                 // calculate heuristic value
                 let progress = played_cells as f32 / 9.0;
@@ -280,9 +282,9 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> Heuristic<UltTTTM
     }
 
     fn evaluate_move(
-        state: &<UltTTTMCTSGame<GC> as MCTSGame>::State,
-        mv: &<UltTTTMCTSGame<GC> as MCTSGame>::Move,
-        game_cache: &mut <UltTTTMCTSGame<GC> as MCTSGame>::Cache,
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        mv: &<UltTTTMCTSGame as MCTSGame>::Move,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
         heuristic_cache: &mut Self::Cache,
         heuristic_config: &Self::Config,
     ) -> f32 {

@@ -1,7 +1,15 @@
 // utilities for optimization
 
-use super::*;
+use super::{
+    HPWDefaultTTTNoGameCache, TicTacToeStatus, UltTTT, UltTTTHeuristic, UltTTTHeuristicConfig,
+    UltTTTMCTSConfig, UltTTTMCTSGame,
+};
 use anyhow::Context;
+use my_lib::my_mcts::{
+    BaseConfig, BaseHeuristicConfig, CachedUTC, DefaultSimulationPolicy, DynamicC, ExpandAll,
+    HeuristicCutoff, MCTSAlgo, MCTSGame, NoHeuristic, NoTranspositionTable, PlainMCTS,
+    PlainTTHashMap,
+};
 use my_lib::my_optimizer::{
     increment_progress_counter_by, update_progress, LogFormat, ObjectiveFunction, ParamBound,
     ParamDescriptor,
@@ -14,8 +22,6 @@ use uuid::Uuid;
 
 const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(995);
 const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
-
-type UltTTTExpandAll = ExpandAll<UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>>;
 
 pub struct EarlyBreakOff {
     pub num_check_matches: usize,
@@ -86,20 +92,24 @@ impl ObjectiveFunction for UltTTTObjectiveFunction {
     }
 }
 
-pub type UltTTTMCTSFirst = PlainMCTSWithTT<
-    UltTTTMCTSGameNoGameCache,
-    DynamicC,
-    CachedUTC,
-    HPWDefaultTTTNoGameCache,
+pub type UltTTTMCTSFirst = PlainMCTS<
+    UltTTTMCTSGame,
     UltTTTHeuristic,
+    UltTTTMCTSConfig,
+    CachedUTC,
+    PlainTTHashMap<UltTTT>,
+    DynamicC,
+    HPWDefaultTTTNoGameCache,
     HeuristicCutoff,
 >;
 pub type UltTTTMCTSSecond = PlainMCTS<
-    UltTTTMCTSGameNoGameCache,
-    DynamicC,
-    CachedUTC,
-    UltTTTExpandAll,
+    UltTTTMCTSGame,
     NoHeuristic,
+    UltTTTMCTSConfig,
+    CachedUTC,
+    NoTranspositionTable,
+    DynamicC,
+    ExpandAll,
     DefaultSimulationPolicy,
 >;
 
@@ -107,12 +117,11 @@ pub fn run_match(
     config: Config,
     heuristic_is_start_player: bool,
 ) -> (f64, UltTTTMCTSFirst, UltTTTMCTSSecond) {
-    let mut first_mcts_ult_ttt: UltTTTMCTSFirst =
-        PlainMCTSWithTT::new(config.mcts, config.heuristic);
+    let mut first_mcts_ult_ttt: UltTTTMCTSFirst = PlainMCTS::new(config.mcts, config.heuristic);
     let mut first_ult_ttt_game_data = UltTTT::new();
     let mut first_time_out = TIME_OUT_FIRST_TURN;
     let mut second_mcts_ult_ttt: UltTTTMCTSSecond =
-        PlainMCTS::new(UltTTTMCTSConfig::default(), BaseHeuristicConfig::default());
+        PlainMCTS::new(UltTTTMCTSConfig::default(), NoHeuristic {});
     let mut second_ult_ttt_game_data = UltTTT::new();
     let mut second_time_out = TIME_OUT_FIRST_TURN;
 

@@ -1,4 +1,6 @@
-use my_lib::my_monte_carlo_tree_search::*;
+use my_lib::my_mcts::{
+    CachedUTC, DynamicC, HeuristicCutoff, MCTSAlgo, MCTSGame, NoTranspositionTable, PlainMCTS,
+};
 use my_lib::my_tic_tac_toe::TicTacToeStatus;
 use std::io;
 use std::sync::mpsc;
@@ -7,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use cg_ultimate_tic_tac_toe::{
     HPWDefaultTTTNoGameCache, UltTTT, UltTTTHeuristic, UltTTTHeuristicConfig, UltTTTMCTSConfig,
-    UltTTTMCTSGame, UltTTTMCTSGameNoGameCache, UltTTTMove,
+    UltTTTMCTSGame, UltTTTMove,
 };
 
 macro_rules! parse_input {
@@ -30,11 +32,13 @@ fn main() {
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGameNoGameCache,
-        DynamicC,
-        CachedUTC,
-        HPWDefaultTTTNoGameCache,
+        UltTTTMCTSGame,
         UltTTTHeuristic,
+        UltTTTMCTSConfig,
+        CachedUTC,
+        NoTranspositionTable,
+        DynamicC,
+        HPWDefaultTTTNoGameCache,
         HeuristicCutoff,
     > = PlainMCTS::new(
         UltTTTMCTSConfig::new_optimized(),

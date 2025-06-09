@@ -2,7 +2,7 @@
 // With this tool we analyze the final game tree of a match of UltTTT for the number of equal states, which could have been cached.
 
 use cg_ultimate_tic_tac_toe::{config::*, utilities::*};
-use my_lib::my_monte_carlo_tree_search::*;
+use my_lib::my_mcts::{MCTSNode, MCTSTree};
 use std::collections::{HashMap, HashSet};
 
 fn main() {

@@ -1,6 +1,14 @@
 // game cache for UltTTT
 
-use super::*;
+// WARNING: Caching is inefficient for UlTTTT, therefore this mod is deprecated.
+
+use super::{UltTTT, UltTTTMove};
+use my_lib::{
+    my_map_3x3::CellIndex3x3,
+    my_mcts::{GameCache, HeuristicCache, NoGameCache},
+    my_tic_tac_toe::{BoardAnalysis, TicTacToeGameData, TicTacToeStatus},
+};
+
 use std::collections::{HashMap, HashSet};
 
 pub struct UltTTTGameCache {

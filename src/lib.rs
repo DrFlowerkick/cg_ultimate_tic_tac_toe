@@ -14,7 +14,9 @@ pub mod utilities;
 mod old_heuristic;
 
 use my_lib::my_map_3x3::*;
-use my_lib::my_monte_carlo_tree_search::*;
+use my_lib::my_mcts::{
+    GamePlayer, HeuristicProgressiveWidening, MCTSGame, NoGameCache, ProgressiveWidening,
+};
 use my_lib::my_tic_tac_toe::*;
 
 use std::cmp::Ordering;
@@ -149,23 +151,17 @@ impl Display for UltTTT {
     }
 }
 
-pub type UltTTTMCTSGameWithGameCache = UltTTTMCTSGame<UltTTTGameCache>;
-pub type UltTTTMCTSGameNoGameCache = UltTTTMCTSGame<NoGameCache<UltTTT, UltTTTMove>>;
-
-pub type HPWDefaultTTTWithGameCache = ProgressiveWidening<UltTTTMCTSGameWithGameCache>;
+pub type HPWDefaultTTTWithGameCache = ProgressiveWidening<UltTTTMCTSGame, UltTTTMCTSConfig>;
 pub type HPWDefaultTTTNoGameCache =
-    HeuristicProgressiveWidening<UltTTTMCTSGameNoGameCache, UltTTTHeuristic>;
+    HeuristicProgressiveWidening<UltTTTMCTSGame, UltTTTHeuristic, UltTTTMCTSConfig>;
 
-pub struct UltTTTMCTSGame<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> {
-    phantom: std::marker::PhantomData<GC>,
-}
+pub struct UltTTTMCTSGame {}
 
-impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> MCTSGame for UltTTTMCTSGame<GC> {
+impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
     type Move = UltTTTMove;
     type Player = TicTacToeStatus;
-    type Cache = GC;
-    type Config = UltTTTMCTSConfig;
+    type Cache = NoGameCache<UltTTT, UltTTTMove>;
 
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a> {
         match state.next_action_constraint {
@@ -205,7 +201,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> MCTSGame for UltT
     fn apply_move(
         state: &Self::State,
         mv: &Self::Move,
-        game_cache: &mut Self::Cache,
+        _game_cache: &mut Self::Cache,
     ) -> Self::State {
         let mut new_state = *state;
         // apply the move for current player
@@ -213,7 +209,7 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> MCTSGame for UltT
             .map
             .get_cell_mut(mv.status_index)
             .set_cell_value(mv.mini_board_index, state.current_player);
-        let status = game_cache.get_status(new_state.map.get_cell(mv.status_index));
+        let status = new_state.map.get_cell(mv.status_index).get_status();
         if !status.is_vacant() {
             new_state.status_map.set_cell_value(mv.status_index, status);
         }
@@ -234,8 +230,8 @@ impl<GC: UltTTTGameCacheTrait + GameCache<UltTTT, UltTTTMove>> MCTSGame for UltT
         new_state
     }
 
-    fn evaluate(state: &Self::State, game_cache: &mut Self::Cache) -> Option<f32> {
-        let mut status = game_cache.get_status(&state.status_map);
+    fn evaluate(state: &Self::State, _game_cache: &mut Self::Cache) -> Option<f32> {
+        let mut status = state.status_map.get_status();
         if status == TicTacToeStatus::Tie {
             // game finished without direct winner
             // count for each player number of won squares; most squares won wins game
