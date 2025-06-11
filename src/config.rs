@@ -16,20 +16,20 @@ impl UltTTTMCTSConfig {
     pub fn optimized() -> Self {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
-                exploration_constant: 1.259,
-                progressive_widening_constant: 1.371,
-                progressive_widening_exponent: 0.343,
-                early_cut_off_depth: 19,
+                exploration_constant: 1.298,
+                progressive_widening_constant: 1.602,
+                progressive_widening_exponent: 0.333,
+                early_cut_off_depth: 15,
             },
         }
     }
     pub fn new_optimized() -> Self {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
-                exploration_constant: 1.298,
-                progressive_widening_constant: 1.602,
+                exploration_constant: 1.992,
+                progressive_widening_constant: 1.584,
                 progressive_widening_exponent: 0.333,
-                early_cut_off_depth: 15,
+                early_cut_off_depth: 12,
             },
         }
     }
@@ -89,26 +89,6 @@ impl UltTTTHeuristicConfig {
     pub fn optimized() -> Self {
         UltTTTHeuristicConfig {
             base_config: BaseHeuristicConfig {
-                progressive_widening_initial_threshold: 0.837,
-                progressive_widening_decay_rate: 0.807,
-                early_cut_off_lower_bound: 0.161,
-                early_cut_off_upper_bound: 0.941,
-            },
-            control_base_weight: 0.573,
-            control_progress_offset: 0.271,
-            control_local_steepness: 0.15,
-            control_global_steepness: 0.3,
-            meta_cell_big_threat: 3.931,
-            meta_cell_small_threat: 1.17,
-            threat_steepness: 0.5,
-            constraint_factor: 1.291,
-            free_choice_constraint_factor: 1.344,
-            direct_loss_value: 0.0,
-        }
-    }
-    pub fn new_optimized() -> Self {
-        UltTTTHeuristicConfig {
-            base_config: BaseHeuristicConfig {
                 progressive_widening_initial_threshold: 0.676,
                 progressive_widening_decay_rate: 0.814,
                 early_cut_off_lower_bound: 0.068,
@@ -123,6 +103,26 @@ impl UltTTTHeuristicConfig {
             threat_steepness: 0.171,
             constraint_factor: 0.128,
             free_choice_constraint_factor: 0.982,
+            direct_loss_value: 0.0,
+        }
+    }
+    pub fn new_optimized() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                progressive_widening_initial_threshold: 0.861,
+                progressive_widening_decay_rate: 0.837,
+                early_cut_off_lower_bound: 0.078,
+                early_cut_off_upper_bound: 0.947,
+            },
+            control_base_weight: 0.600,
+            control_progress_offset: 0.231,
+            control_local_steepness: 0.054,
+            control_global_steepness: 0.413,
+            meta_cell_big_threat: 3.415,
+            meta_cell_small_threat: 0.689,
+            threat_steepness: 0.116,
+            constraint_factor: 0.100,
+            free_choice_constraint_factor: 0.850,
             direct_loss_value: 0.0,
         }
     }

@@ -1,0 +1,132 @@
+# impl config file in TOML format to configure impl items of specific impl blocks to
+# include in or exclude from challenge.
+# file structure:
+# [impl_items]
+# include = [include_item_1, include_item_2]
+# exclude = [exclude_item_1, exclude_item_2]
+# [impl_blocks]
+# include = [include_impl_block_1, include_impl_block_2]
+# exclude = [exclude_impl_block_1, exclude_impl_block_2]
+#
+# If in conflict with other impl options (item or block), the 'include' option always wins.
+#
+# --- impl items of impl blocks ---
+# impl items are identified by their plain name, e.g.
+# fn my_function() --> my_function
+# const MY_CONST --> MY_CONST
+# If the name of the impl item is ambiguous (e.g. push(), next(), etc.), add the fully
+# qualified name of the impl block containing the impl item. Use the following naming
+# schema:
+# impl_item_name@fully_qualified_name_of_impl_block
+#
+# A fully qualified name of an impl block consists of up to four components:
+# 1. impl with lifetime and type parameters if applicable, e.g. impl<'a, T: Display>
+# 2. if impl with a trait, than path to trait with lifetime and type parameters if applicable and 'for' keyword, e.g.
+#    convert::From<&str> for
+# 3. path to user defined type with lifetime and type parameters if applicable referenced by impl
+#    block, e.g. map::TwoDim<X, Y>
+# 4. if impl has a where clause, than where clause for type parameters, e.g. where D: Display
+#
+# Specify the components without any whitespace with the exception of one space between trait and
+# 'for' keyword. The components are separated each by one space.
+# Example 1: impl<constX:usize,constY:usize> map::TwoDim<X,Y>
+# Example 2: impl<'a> From<&'astr> for FooType<'a>
+# Example 3: impl<D> MyPrint for MyType<D> whereD:Display
+#
+# Usage of wildcard '*' for impl item name is possible, but requires a fully qualified name of an
+# impl block, e.g.: *@impl StructFoo
+# This will include all impl items of the corresponding impl block(s)
+#
+# --- impl block ---
+# cg-fusion uses a simple approach to identify required items of src code, which is in most cases not
+# capable of identifying dependencies on traits like Display or From. To include these traits in the
+# fusion of challenge, add all required impl blocks by their fully qualified name (see above) to the
+# configuration. If an impl block with a trait is included, than all items of the impl block will be
+# required by fusion of challenge.
+# If you configure an impl block without a trait, the impl items of this block will be added to the
+# impl user dialog. If you want to avoid this dialog, add the required impl items with the above impl
+# item include options to the configuration. In this case you do not need to add the corresponding
+# impl block to the configuration, because every impl block, which contains required items, will be
+# pulled into the fusion automatically.
+[impl_items]
+include = [
+    "count_me_cells",
+    "count_opp_cells",
+    "evaluate@impl TicTacToeStatus",
+    "execute_action",
+    "get_cell",
+    "get_cell_mut",
+    "get_cell_value@impl TicTacToeGameData",
+    "get_status@impl TicTacToeGameData",
+    "is_not_vacant",
+    "is_vacant",
+    "iter_map",
+    "iterate@impl<T:Default+Clone+Copy> MyMap3x3<T>",
+    "new@impl TicTacToeGameData",
+    "new@impl UltTTT",
+    "new@impl<G,H,MC,UC,TT,UP,EP,SP> PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
+    "new@impl<T:Default+Clone+Copy> MyMap3x3<T>",
+    "next_player@impl UltTTT",
+    "set_cell",
+    "set_cell_value",
+    "set_current_player@impl UltTTT"
+]
+exclude = [
+    "get_cell_value@impl UltTTT"
+]
+[impl_blocks]
+include = [
+    "impl CellIndex3x3",
+    "impl Default for UltTTTMCTSConfig",
+    "impl From<CellIndex3x3> for (u8,u8)",
+    "impl From<CellIndex3x3> for usize",
+    "impl From<UltTTTMove> for (u8,u8)",
+    "impl GamePlayer for TicTacToeStatus",
+    "impl HeuristicConfig for NoHeuristic",
+    "impl MCTSConfig for UltTTTMCTSConfig",
+    "impl TicTacToeGameData",
+    "impl TicTacToeStatus",
+    "impl TryFrom<(u8,u8)> for CellIndex3x3",
+    "impl TryFrom<usize> for CellIndex3x3",
+    "impl UltTTT",
+    "impl UltTTTMCTSConfig",
+    "impl<G,H,A,UC> MCTSTree<G,H,A> for PlainTree<G,H,A,UC> whereG:MCTSGame,H:Heuristic<G>,A:MCTSAlgo<G,H,NodeID=usize>,UC:UTCCache<G,A::UTC,A::Config>,",
+    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for ExpandAll whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
+    "impl<G,H,MC,UC,TT,UP,EP,SP> MCTSAlgo<G,H> for PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
+    "impl<G,H,MC,UC,TT,UP,EP,SP> PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
+    "impl<G,H,MC,UC,UP,EP> MCTSNode<G,H,MC,UP,EP> for PlainNode<G,H,MC,UC,UP,EP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,",
+    "impl<G,UTC,Config> UTCCache<G,UTC,Config> for CachedUTC whereG:MCTSGame,UTC:UCTPolicy<G,Config>,Config:MCTSConfig,",
+    "impl<G:MCTSGame,H:Heuristic<G>,Config:MCTSConfig> SimulationPolicy<G,H,Config> for DefaultSimulationPolicy",
+    "impl<G:MCTSGame> Heuristic<G> for NoHeuristic",
+    "impl<State,ID> TranspositionTable<State,ID> for NoTranspositionTable",
+    "impl<State,Move> GameCache<State,Move> for NoGameCache<State,Move>",
+    "impl<G:MCTSGame,Config:MCTSConfig> UCTPolicy<G,Config> for StaticC",
+    "impl<State,Move> HeuristicCache<State,Move> for NoHeuristicCache<State,Move>"
+]
+exclude = [
+    "impl<G:MCTSGame,Config:MCTSConfig> UCTPolicy<G,Config> for DynamicC",
+    "impl Default for BaseConfig",
+    "impl Display for CellIndex3x3",
+    "impl Display for UltTTT",
+    "impl GameCache<TicTacToeGame,TicTacToePlayerAction> for TicTacToeGameCache",
+    "impl GameCache<UltTTT,UltTTTMove> for UltTTTGameCache",
+    "impl Heuristic<UltTTTMCTSGame> for OldUltTTTHeuristic",
+    "impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic",
+    "impl HeuristicCache<UltTTT,UltTTTMove> for UltTTTHeuristicCache",
+    "impl HeuristicConfig for BaseHeuristicConfig",
+    "impl HeuristicConfig for BaseRecursiveConfig",
+    "impl HeuristicConfig for UltTTTHeuristicConfig",
+    "impl MCTSConfig for BaseConfig",
+    "impl MCTSGame for TicTacToeMCTSGame",
+    "impl UltTTTGameCacheTrait for NoGameCache<UltTTT,UltTTTMove>",
+    "impl std::fmt::Display for TicTacToeGameData",
+    "impl std::fmt::Display for TicTacToeStatus",
+    "impl<G,Config> ProgressiveWidening<G,Config> whereG:MCTSGame,Config:MCTSConfig,",
+    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
+    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for ProgressiveWidening<G,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
+    "impl<G,H,Config> HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
+    "impl<G,UTC,Config> UTCCache<G,UTC,Config> for NoUTCCache whereG:MCTSGame,UTC:UCTPolicy<G,Config>,Config:MCTSConfig,",
+    "impl<G:MCTSGame,H:Heuristic<G>,Config:MCTSConfig> SimulationPolicy<G,H,Config> for EarlyCutoff",
+    "impl<G:MCTSGame,H:Heuristic<G>,Config:MCTSConfig> SimulationPolicy<G,H,Config> for HeuristicCutoff",
+    "impl<State,ID> TranspositionTable<State,ID> for TranspositionHashMap<State,ID> whereState:Eq+std::hash::Hash,"
+]

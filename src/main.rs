@@ -1,5 +1,9 @@
+/*use my_lib::my_mcts::{
+    CachedUTC, DynamicC, HeuristicCutoff, MCTSAlgo, MCTSGame, PlainMCTS, PlainTTHashMap,
+};*/
 use my_lib::my_mcts::{
-    CachedUTC, DynamicC, HeuristicCutoff, MCTSAlgo, MCTSGame, NoTranspositionTable, PlainMCTS,
+    CachedUTC, DefaultSimulationPolicy, ExpandAll, MCTSAlgo, MCTSGame, NoHeuristic,
+    NoTranspositionTable, PlainMCTS, StaticC,
 };
 use my_lib::my_tic_tac_toe::TicTacToeStatus;
 use std::io;
@@ -7,10 +11,11 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cg_ultimate_tic_tac_toe::{
+/*use cg_ultimate_tic_tac_toe::{
     HPWDefaultTTTNoGameCache, UltTTT, UltTTTHeuristic, UltTTTHeuristicConfig, UltTTTMCTSConfig,
     UltTTTMCTSGame, UltTTTMove,
-};
+};*/
+use cg_ultimate_tic_tac_toe::{UltTTT, UltTTTMCTSConfig, UltTTTMCTSGame, UltTTTMove};
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -28,22 +33,19 @@ macro_rules! parse_input {
 
 fn main() {
     let time_out_first_turn = Duration::from_millis(990);
-    //let time_out_successive_turns = Duration::from_millis(90);
+    let time_out_successive_turns = Duration::from_millis(90);
     let time_out_codingame_input = Duration::from_millis(2000);
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt: PlainMCTS<
         UltTTTMCTSGame,
-        UltTTTHeuristic,
+        NoHeuristic,
         UltTTTMCTSConfig,
         CachedUTC,
         NoTranspositionTable,
-        DynamicC,
-        HPWDefaultTTTNoGameCache,
-        HeuristicCutoff,
-    > = PlainMCTS::new(
-        UltTTTMCTSConfig::new_optimized(),
-        UltTTTHeuristicConfig::new_optimized(),
-    );
+        StaticC,
+        ExpandAll,
+        DefaultSimulationPolicy,
+    > = PlainMCTS::new(UltTTTMCTSConfig::default(), NoHeuristic {});
 
     // start parallel thread for input of codingame
     let (tx, rx) = mpsc::channel();
@@ -110,11 +112,13 @@ fn main() {
         assert!(mcts_ult_ttt.set_root(&game_data));
         // iterate until new input from codingame arrives
         let start = Instant::now();
+        let mut instant_input_received = Instant::now();
+        let mut input_received = false;
         number_of_iterations = 0;
         loop {
             match rx.try_recv() {
                 Ok((opponent_row, opponent_col)) => {
-                    eprintln!("time of iterations: {:?}", start.elapsed());
+                    eprintln!("time from opp perspective: {:?}", start.elapsed());
                     turn_counter += 1;
                     // codingame input received
                     let opp_action = (opponent_col as u8, opponent_row as u8);
@@ -127,7 +131,8 @@ fn main() {
                     if !mcts_ult_ttt.set_root(&game_data) {
                         eprintln!("Reset root after opponent move in turn {}.", turn_counter);
                     }
-                    break;
+                    instant_input_received = Instant::now();
+                    input_received = true;
                 }
                 Err(mpsc::TryRecvError::Empty) => {
                     // expand mcts tree until new input is received
@@ -135,6 +140,18 @@ fn main() {
                     number_of_iterations += 1;
                     if start.elapsed() > time_out_codingame_input {
                         panic!("Timeout while waiting for codingame input");
+                    }
+                    // expand mcts tree for time_out_successive_turns after receiving input to make
+                    // sure, that always some tree exists after action of opponent
+                    if input_received
+                        && instant_input_received.elapsed() > time_out_successive_turns
+                    {
+                        eprintln!(
+                            "time from my perspective: {:?}",
+                            instant_input_received.elapsed()
+                        );
+                        eprintln!("total time of iterations: {:?}", start.elapsed());
+                        break;
                     }
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {

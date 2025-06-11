@@ -8,7 +8,7 @@ use anyhow::Context;
 use my_lib::my_mcts::{
     BaseConfig, BaseHeuristicConfig, CachedUTC, DefaultSimulationPolicy, DynamicC, ExpandAll,
     HeuristicCutoff, MCTSAlgo, MCTSGame, NoHeuristic, NoTranspositionTable, PlainMCTS,
-    PlainTTHashMap,
+    PlainTTHashMap, StaticC
 };
 use my_lib::my_optimizer::{
     increment_progress_counter_by, update_progress, LogFormat, ObjectiveFunction, ParamBound,
@@ -108,7 +108,7 @@ pub type UltTTTMCTSSecond = PlainMCTS<
     UltTTTMCTSConfig,
     CachedUTC,
     NoTranspositionTable,
-    DynamicC,
+    StaticC,
     ExpandAll,
     DefaultSimulationPolicy,
 >;
@@ -142,7 +142,11 @@ pub fn run_match(
         if first {
             let start = Instant::now();
             if !first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data) && turn_counter > 2 {
-                tracing::debug!(heuristic_is_start_player, turn_counter, "Reset tree root of first.");
+                tracing::debug!(
+                    heuristic_is_start_player,
+                    turn_counter,
+                    "Reset tree root of first."
+                );
             }
             while start.elapsed() < first_time_out {
                 first_mcts_ult_ttt.iterate();
@@ -163,7 +167,11 @@ pub fn run_match(
         } else {
             let start = Instant::now();
             if !second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data) && turn_counter > 2 {
-                tracing::debug!(heuristic_is_start_player, turn_counter, "Reset tree root of second.");
+                tracing::debug!(
+                    heuristic_is_start_player,
+                    turn_counter,
+                    "Reset tree root of second."
+                );
             }
             while start.elapsed() < second_time_out {
                 second_mcts_ult_ttt.iterate();
