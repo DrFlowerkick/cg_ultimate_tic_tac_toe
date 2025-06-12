@@ -17,6 +17,7 @@ impl UltTTTMCTSConfig {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
                 exploration_constant: 1.298,
+                non_perspective_player_exploration_boost: 1.0,
                 progressive_widening_constant: 1.602,
                 progressive_widening_exponent: 0.333,
                 early_cut_off_depth: 15,
@@ -27,6 +28,7 @@ impl UltTTTMCTSConfig {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
                 exploration_constant: 1.992,
+                non_perspective_player_exploration_boost: 1.0,
                 progressive_widening_constant: 1.584,
                 progressive_widening_exponent: 0.333,
                 early_cut_off_depth: 12,
@@ -40,6 +42,7 @@ impl Default for UltTTTMCTSConfig {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
                 exploration_constant: 1.4,
+                non_perspective_player_exploration_boost: 1.0,
                 progressive_widening_constant: 2.0,
                 progressive_widening_exponent: 0.5,
                 early_cut_off_depth: 30,

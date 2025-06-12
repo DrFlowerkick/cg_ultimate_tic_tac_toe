@@ -17,7 +17,7 @@ fn run() -> anyhow::Result<()> {
         console_format: LogFormat::PlainText,
         file_log: Some(FileLogConfig {
             directory: ".",
-            prefix: "evolutionary_optimizer_03_log".into(),
+            prefix: "evolutionary_optimizer_04_log".into(),
             format: LogFormat::Json,
         }),
     }
@@ -31,7 +31,7 @@ fn run() -> anyhow::Result<()> {
         .build_global()
         .unwrap();
 
-    let filename = "evolutionary_optimizer_results_03.csv";
+    let filename = "evolutionary_optimizer_results_04.csv";
     let population_size = 50;
     let param_bounds = Config::param_bounds();
     let population_saver = Some(PopulationSaver {
@@ -127,11 +127,6 @@ fn run() -> anyhow::Result<()> {
         best_config
     );
 
-    save_population(
-        &population,
-        &Config::parameter_names(),
-        "evolutionary_optimizer_results.csv",
-        3,
-    )?;
+    save_population(&population, &Config::parameter_names(), filename, 3)?;
     Ok(())
 }

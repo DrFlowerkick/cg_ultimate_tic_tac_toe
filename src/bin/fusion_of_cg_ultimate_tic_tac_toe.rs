@@ -9,20 +9,10 @@ macro_rules! parse_input {
     };
 }
 fn main() {
+    let mut start = Instant::now();
     let time_out_first_turn = Duration::from_millis(990);
-    let time_out_successive_turns = Duration::from_millis(90);
-    let time_out_codingame_input = Duration::from_millis(2000);
-    let mut game_data = UltTTT::new();
-    let mut mcts_ult_ttt: PlainMCTS<
-        UltTTTMCTSGame,
-        NoHeuristic,
-        UltTTTMCTSConfig,
-        CachedUTC,
-        NoTranspositionTable,
-        StaticC,
-        ExpandAll,
-        DefaultSimulationPolicy,
-    > = PlainMCTS::new(UltTTTMCTSConfig::default(), NoHeuristic {});
+    let time_out_successive_turns = Duration::from_millis(85);
+    let time_out_codingame_input = Duration::from_millis(10_000);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || loop {
         let mut input_line = String::new();
@@ -44,41 +34,71 @@ fn main() {
             let _col = parse_input!(inputs[1], i32);
         }
     });
-    let mut turn_counter = 0;
-    let (opponent_row, opponent_col) = rx.recv().expect("Failed to receive initial input");
-    if opponent_row >= 0 {
-        turn_counter += 1;
-        game_data.set_current_player(TicTacToeStatus::Opp);
-        let opp_action = (opponent_col as u8, opponent_row as u8);
-        game_data = UltTTTMCTSGame::apply_move(
-            &game_data,
-            &UltTTTMove::try_from(opp_action).unwrap(),
-            &mut mcts_ult_ttt.game_cache,
-        );
-    }
+    let expected_num_nodes = 160_000;
+    type UltTTTMCTS = PlainMCTS<
+        UltTTTMCTSGame,
+        UltTTTHeuristic,
+        UltTTTMCTSConfig,
+        CachedUTC,
+        PlainTTHashMap<UltTTT>,
+        DynamicC,
+        HPWDefaultTTTNoGameCache,
+        HeuristicCutoff,
+    >;
+    let mut game_data = UltTTT::new();
+    let mut mcts_ult_ttt = UltTTTMCTS::new(
+        UltTTTMCTSConfig::new_optimized(),
+        UltTTTHeuristicConfig::new_optimized(),
+        expected_num_nodes,
+    );
     mcts_ult_ttt.set_root(&game_data);
-    let start = Instant::now();
+    let mut secondary_game_data = UltTTT::new();
+    secondary_game_data.set_current_player(TicTacToeStatus::Opp);
+    let mut secondary_mcts_ult_ttt = UltTTTMCTS::new(
+        UltTTTMCTSConfig::new_optimized(),
+        UltTTTHeuristicConfig::new_optimized(),
+        expected_num_nodes,
+    );
+    secondary_mcts_ult_ttt.set_root(&secondary_game_data);
+    let mut turn_counter = 0;
+    let mut first_turn = true;
+    let mut time_out = time_out_first_turn;
+    let mut instant_input_received = Instant::now();
+    let mut input_received = false;
     let mut number_of_iterations = 0;
-    while start.elapsed() < time_out_first_turn {
-        mcts_ult_ttt.iterate();
-        number_of_iterations += 1;
-    }
-    eprintln!("Iterations of first turn: {}", number_of_iterations);
     loop {
-        turn_counter += 1;
-        let selected_move = *mcts_ult_ttt.select_move();
-        game_data =
-            UltTTTMCTSGame::apply_move(&game_data, &selected_move, &mut mcts_ult_ttt.game_cache);
-        selected_move.execute_action();
-        assert!(mcts_ult_ttt.set_root(&game_data));
-        let start = Instant::now();
-        let mut instant_input_received = Instant::now();
-        let mut input_received = false;
-        number_of_iterations = 0;
-        loop {
-            match rx.try_recv() {
-                Ok((opponent_row, opponent_col)) => {
-                    eprintln!("time from opp perspective: {:?}", start.elapsed());
+        match rx.try_recv() {
+            Ok((opponent_row, opponent_col)) => {
+                let time_elapsed = start.elapsed();
+                if first_turn {
+                    assert_eq!(
+                        turn_counter, 0,
+                        "Should have reset first_turn flag before receiving second input."
+                    );
+                    eprintln!("time of initial input: {:?}", time_elapsed);
+                    if opponent_row >= 0 {
+                        turn_counter += 1;
+                        let opp_action = (opponent_col as u8, opponent_row as u8);
+                        game_data = UltTTTMCTSGame::apply_move(
+                            &secondary_game_data,
+                            &UltTTTMove::try_from(opp_action).unwrap(),
+                            &mut mcts_ult_ttt.game_cache,
+                        );
+                        if !secondary_mcts_ult_ttt.set_root(&game_data) {
+                            eprintln!("Reset root of secondary_mcts_ult_ttt.");
+                        }
+                        let replace_target_secondary_mcts_ult_ttt = UltTTTMCTS::new(
+                            UltTTTMCTSConfig::new_optimized(),
+                            UltTTTHeuristicConfig::new_optimized(),
+                            0,
+                        );
+                        mcts_ult_ttt = std::mem::replace(
+                            &mut secondary_mcts_ult_ttt,
+                            replace_target_secondary_mcts_ult_ttt,
+                        );
+                    }
+                } else {
+                    eprintln!("time from opp perspective: {:?}", time_elapsed);
                     turn_counter += 1;
                     let opp_action = (opponent_col as u8, opponent_row as u8);
                     game_data = UltTTTMCTSGame::apply_move(
@@ -89,43 +109,76 @@ fn main() {
                     if !mcts_ult_ttt.set_root(&game_data) {
                         eprintln!("Reset root after opponent move in turn {}.", turn_counter);
                     }
-                    instant_input_received = Instant::now();
-                    input_received = true;
                 }
-                Err(mpsc::TryRecvError::Empty) => {
-                    mcts_ult_ttt.iterate();
-                    number_of_iterations += 1;
-                    if start.elapsed() > time_out_codingame_input {
-                        panic!("Timeout while waiting for codingame input");
-                    }
-                    if input_received
-                        && instant_input_received.elapsed() > time_out_successive_turns
-                    {
-                        eprintln!(
-                            "time from my perspective: {:?}",
-                            instant_input_received.elapsed()
-                        );
-                        eprintln!("total time of iterations: {:?}", start.elapsed());
-                        break;
-                    }
+                instant_input_received = Instant::now();
+                input_received = true;
+            }
+            Err(mpsc::TryRecvError::Empty) => {
+                let time_elapsed_since_start = start.elapsed();
+                if time_elapsed_since_start > time_out_codingame_input {
+                    panic!("Timeout while waiting for codingame input");
                 }
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    panic!("Codingame input thread disconnected");
+                if first_turn && !input_received {
+                    secondary_mcts_ult_ttt.iterate();
+                }
+                mcts_ult_ttt.iterate();
+                number_of_iterations += 1;
+                if input_received && instant_input_received.elapsed() > time_out {
+                    eprintln!(
+                        "time from my perspective: {:?}",
+                        instant_input_received.elapsed()
+                    );
+                    eprintln!("total time of iterations: {:?}", start.elapsed());
+                    turn_counter += 1;
+                    eprintln!(
+                        "Iterations of turn {}: {}",
+                        turn_counter, number_of_iterations
+                    );
+                    let selected_move = *mcts_ult_ttt.select_move();
+                    game_data = UltTTTMCTSGame::apply_move(
+                        &game_data,
+                        &selected_move,
+                        &mut mcts_ult_ttt.game_cache,
+                    );
+                    selected_move.execute_action();
+                    assert!(mcts_ult_ttt.set_root(&game_data));
+                    eprintln!("Size of tree: {}", mcts_ult_ttt.tree.nodes.len());
+                    number_of_iterations = 0;
+                    time_out = time_out_successive_turns;
+                    first_turn = false;
+                    input_received = false;
+                    start = Instant::now();
                 }
             }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                panic!("Codingame input thread disconnected");
+            }
         }
-        eprintln!("Iterations of successive turns: {}", number_of_iterations);
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct UltTTTMCTSConfig {
     base_config: BaseConfig,
 }
+impl UltTTTMCTSConfig {
+    fn new_optimized() -> Self {
+        UltTTTMCTSConfig {
+            base_config: BaseConfig {
+                exploration_constant: 1.992,
+                non_perspective_player_exploration_boost: 1.0,
+                progressive_widening_constant: 1.584,
+                progressive_widening_exponent: 0.333,
+                early_cut_off_depth: 12,
+            },
+        }
+    }
+}
 impl Default for UltTTTMCTSConfig {
     fn default() -> Self {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
                 exploration_constant: 1.4,
+                non_perspective_player_exploration_boost: 1.0,
                 progressive_widening_constant: 2.0,
                 progressive_widening_exponent: 0.5,
                 early_cut_off_depth: 30,
@@ -145,6 +198,326 @@ impl MCTSConfig for UltTTTMCTSConfig {
     }
     fn early_cut_off_depth(&self) -> usize {
         self.base_config.early_cut_off_depth
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct UltTTTHeuristicConfig {
+    base_config: BaseHeuristicConfig,
+    control_base_weight: f32,
+    control_progress_offset: f32,
+    control_local_steepness: f32,
+    control_global_steepness: f32,
+    meta_cell_big_threat: f32,
+    meta_cell_small_threat: f32,
+    threat_steepness: f32,
+    constraint_factor: f32,
+    free_choice_constraint_factor: f32,
+    direct_loss_value: f32,
+}
+impl UltTTTHeuristicConfig {
+    fn new_optimized() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                progressive_widening_initial_threshold: 0.861,
+                progressive_widening_decay_rate: 0.837,
+                early_cut_off_lower_bound: 0.078,
+                early_cut_off_upper_bound: 0.947,
+            },
+            control_base_weight: 0.600,
+            control_progress_offset: 0.231,
+            control_local_steepness: 0.054,
+            control_global_steepness: 0.413,
+            meta_cell_big_threat: 3.415,
+            meta_cell_small_threat: 0.689,
+            threat_steepness: 0.116,
+            constraint_factor: 0.100,
+            free_choice_constraint_factor: 0.850,
+            direct_loss_value: 0.0,
+        }
+    }
+}
+impl HeuristicConfig for UltTTTHeuristicConfig {
+    fn progressive_widening_initial_threshold(&self) -> f32 {
+        self.base_config.progressive_widening_initial_threshold
+    }
+    fn progressive_widening_decay_rate(&self) -> f32 {
+        self.base_config.progressive_widening_decay_rate
+    }
+    fn early_cut_off_lower_bound(&self) -> f32 {
+        self.base_config.early_cut_off_lower_bound
+    }
+    fn early_cut_off_upper_bound(&self) -> f32 {
+        self.base_config.early_cut_off_upper_bound
+    }
+}
+impl Default for UltTTTHeuristicConfig {
+    fn default() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                progressive_widening_initial_threshold: 0.8,
+                progressive_widening_decay_rate: 0.95,
+                early_cut_off_lower_bound: 0.05,
+                early_cut_off_upper_bound: 0.95,
+            },
+            control_base_weight: 0.3,
+            control_progress_offset: 0.4,
+            control_local_steepness: 0.15,
+            control_global_steepness: 0.3,
+            meta_cell_big_threat: 3.0,
+            meta_cell_small_threat: 1.5,
+            threat_steepness: 0.5,
+            constraint_factor: 1.5,
+            free_choice_constraint_factor: 1.5,
+            direct_loss_value: 0.01,
+        }
+    }
+}
+struct UltTTTHeuristic {}
+impl UltTTTHeuristic {
+    fn get_constraint_factors(
+        last_player: TicTacToeStatus,
+        my_threats_of_mini_board: &HashSet<CellIndex3x3>,
+        my_meta_threats: &HashSet<CellIndex3x3>,
+        opp_threats_of_mini_board: &HashSet<CellIndex3x3>,
+        opp_meta_threats: &HashSet<CellIndex3x3>,
+        mini_board_index: CellIndex3x3,
+        constraint_factor: f32,
+    ) -> Option<(f32, f32)> {
+        if match last_player {
+            TicTacToeStatus::Me => {
+                !opp_threats_of_mini_board.is_empty()
+                    && opp_meta_threats.contains(&mini_board_index)
+            }
+            TicTacToeStatus::Opp => {
+                !my_threats_of_mini_board.is_empty() && my_meta_threats.contains(&mini_board_index)
+            }
+            _ => unreachable!("Player is always Me or Opp"),
+        } {
+            return None;
+        }
+        match last_player {
+            TicTacToeStatus::Me => {
+                let my_threat_overlap_ratio =
+                    UltTTTHeuristic::get_threat_overlap_ratio_for_last_player(
+                        my_meta_threats,
+                        opp_threats_of_mini_board,
+                    );
+                Some((
+                    1.0 + my_threat_overlap_ratio * constraint_factor,
+                    1.0 + (1.0 - my_threat_overlap_ratio) * constraint_factor,
+                ))
+            }
+            TicTacToeStatus::Opp => {
+                let opp_threat_overlap_ratio =
+                    UltTTTHeuristic::get_threat_overlap_ratio_for_last_player(
+                        opp_meta_threats,
+                        my_threats_of_mini_board,
+                    );
+                Some((
+                    1.0 + (1.0 - opp_threat_overlap_ratio) * constraint_factor,
+                    1.0 + opp_threat_overlap_ratio * constraint_factor,
+                ))
+            }
+            _ => unreachable!("Player is always Me or Opp"),
+        }
+    }
+    fn get_threat_overlap_ratio_for_last_player(
+        last_player_meta_threats: &HashSet<CellIndex3x3>,
+        current_player_threats: &HashSet<CellIndex3x3>,
+    ) -> f32 {
+        if current_player_threats.is_empty() {
+            return 0.0;
+        }
+        let num_last_player_back_to_threat_line = last_player_meta_threats
+            .intersection(current_player_threats)
+            .count();
+        num_last_player_back_to_threat_line as f32 / current_player_threats.len() as f32
+    }
+    fn normalized_tanh(my_score: f32, opp_score: f32, steepness: f32) -> f32 {
+        let delta_score = steepness * (my_score - opp_score);
+        (delta_score.tanh() + 1.0) / 2.0
+    }
+}
+impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic {
+    type Cache = NoHeuristicCache<UltTTT, UltTTTMove>;
+    type Config = UltTTTHeuristicConfig;
+    fn evaluate_state(
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        heuristic_cache: &mut Self::Cache,
+        perspective_player: Option<<UltTTTMCTSGame as MCTSGame>::Player>,
+        heuristic_config: &Self::Config,
+    ) -> f32 {
+        let perspective_is_last_player = match perspective_player {
+            Some(player) => player == state.last_player,
+            None => true,
+        };
+        if let Some(score) = heuristic_cache.get_intermediate_score(state) {
+            return if perspective_is_last_player {
+                score
+            } else {
+                1.0 - score
+            };
+        }
+        let score = match UltTTTMCTSGame::evaluate(state, game_cache) {
+            Some(value) => value,
+            None => {
+                let mut my_control_sum = 0.0;
+                let mut opp_control_sum = 0.0;
+                let mut my_threat_sum = 0.0;
+                let mut opp_threat_sum = 0.0;
+                let (my_meta_threats, opp_meta_threats) = state.status_map.get_threats();
+                for (status_index, status) in state.status_map.iter_map() {
+                    match status {
+                        TicTacToeStatus::Tie => {
+                            continue;
+                        }
+                        TicTacToeStatus::Me => {
+                            my_control_sum += status_index.cell_weight();
+                        }
+                        TicTacToeStatus::Opp => {
+                            opp_control_sum += status_index.cell_weight();
+                        }
+                        TicTacToeStatus::Vacant => {
+                            let (my_control, opp_control) =
+                                state.map.get_cell(status_index).get_board_control();
+                            let my_control_score = UltTTTHeuristic::normalized_tanh(
+                                my_control,
+                                opp_control,
+                                heuristic_config.control_local_steepness,
+                            );
+                            let opp_control_score = 1.0 - my_control_score;
+                            my_control_sum += my_control_score * status_index.cell_weight();
+                            opp_control_sum += opp_control_score * status_index.cell_weight();
+                            let (my_threats, opp_threats) =
+                                state.map.get_cell(status_index).get_threats();
+                            let cell_weight = status_index.cell_weight();
+                            let (
+                                num_my_meta_threats,
+                                mum_my_meta_small_threats,
+                                num_opp_meta_threats,
+                                num_opp_meta_small_threats,
+                            ) = state.status_map.get_meta_cell_threats(status_index);
+                            let my_meta_factor = 1.0
+                                + heuristic_config.meta_cell_big_threat
+                                    * num_my_meta_threats as f32
+                                + heuristic_config.meta_cell_small_threat
+                                    * mum_my_meta_small_threats as f32;
+                            let opp_meta_factor = 1.0
+                                + heuristic_config.meta_cell_big_threat
+                                    * num_opp_meta_threats as f32
+                                + heuristic_config.meta_cell_small_threat
+                                    * num_opp_meta_small_threats as f32;
+                            let (my_constraint_factor, opp_constraint_factor) = match state
+                                .next_action_constraint
+                            {
+                                NextActionConstraint::MiniBoard(next_board) => {
+                                    if status_index == next_board {
+                                        match UltTTTHeuristic::get_constraint_factors(
+                                            state.last_player,
+                                            &my_threats,
+                                            &my_meta_threats,
+                                            &opp_threats,
+                                            &opp_meta_threats,
+                                            status_index,
+                                            heuristic_config.constraint_factor,
+                                        ) {
+                                            Some((my_factor, opp_factor)) => {
+                                                (my_factor, opp_factor)
+                                            }
+                                            None => {
+                                                return if perspective_is_last_player {
+                                                    heuristic_config.direct_loss_value
+                                                } else {
+                                                    1.0 - heuristic_config.direct_loss_value
+                                                };
+                                            }
+                                        }
+                                    } else {
+                                        (1.0, 1.0)
+                                    }
+                                }
+                                NextActionConstraint::None => {
+                                    match UltTTTHeuristic::get_constraint_factors(
+                                        state.last_player,
+                                        &my_threats,
+                                        &my_meta_threats,
+                                        &opp_threats,
+                                        &opp_meta_threats,
+                                        status_index,
+                                        heuristic_config.free_choice_constraint_factor,
+                                    ) {
+                                        Some((my_factor, opp_factor)) => (my_factor, opp_factor),
+                                        None => {
+                                            return if perspective_is_last_player {
+                                                heuristic_config.direct_loss_value
+                                            } else {
+                                                1.0 - heuristic_config.direct_loss_value
+                                            };
+                                        }
+                                    }
+                                }
+                                NextActionConstraint::Init => {
+                                    unreachable!("Init is reserved for initial tree root node.")
+                                }
+                            };
+                            my_threat_sum += my_constraint_factor
+                                * my_meta_factor
+                                * cell_weight
+                                * my_threats.len() as f32;
+                            opp_threat_sum += opp_constraint_factor
+                                * opp_meta_factor
+                                * cell_weight
+                                * opp_threats.len() as f32;
+                        }
+                    }
+                }
+                let played_cells = state.status_map.count_non_vacant_cells();
+                let progress = played_cells as f32 / 9.0;
+                let control_weight = heuristic_config.control_base_weight
+                    + heuristic_config.control_progress_offset * progress;
+                let threat_weight = 1.0 - control_weight;
+                control_weight
+                    * UltTTTHeuristic::normalized_tanh(
+                        my_control_sum,
+                        opp_control_sum,
+                        heuristic_config.control_global_steepness,
+                    )
+                    + threat_weight
+                        * UltTTTHeuristic::normalized_tanh(
+                            my_threat_sum,
+                            opp_threat_sum,
+                            heuristic_config.threat_steepness,
+                        )
+            }
+        };
+        let score = match state.last_player {
+            TicTacToeStatus::Me => score,
+            TicTacToeStatus::Opp => 1.0 - score,
+            _ => unreachable!("Player is alway Me or Opp"),
+        };
+        heuristic_cache.insert_intermediate_score(state, score);
+        if perspective_is_last_player {
+            score
+        } else {
+            1.0 - score
+        }
+    }
+    fn evaluate_move(
+        state: &<UltTTTMCTSGame as MCTSGame>::State,
+        mv: &<UltTTTMCTSGame as MCTSGame>::Move,
+        game_cache: &mut <UltTTTMCTSGame as MCTSGame>::Cache,
+        heuristic_cache: &mut Self::Cache,
+        heuristic_config: &Self::Config,
+    ) -> f32 {
+        let new_state = UltTTTMCTSGame::apply_move(state, mv, game_cache);
+        UltTTTHeuristic::evaluate_state(
+            &new_state,
+            game_cache,
+            heuristic_cache,
+            None,
+            heuristic_config,
+        )
     }
 }
 use std::cmp::Ordering;
@@ -231,6 +604,8 @@ impl UltTTT {
         self.current_player = self.current_player.next();
     }
 }
+type HPWDefaultTTTNoGameCache =
+    HeuristicProgressiveWidening<UltTTTMCTSGame, UltTTTHeuristic, UltTTTMCTSConfig>;
 struct UltTTTMCTSGame {}
 impl MCTSGame for UltTTTMCTSGame {
     type State = UltTTT;
@@ -335,6 +710,15 @@ enum CellIndex3x3 {
     BM = 7,
     BR = 8,
 }
+impl CellIndex3x3 {
+    fn cell_weight(&self) -> f32 {
+        match self {
+            CellIndex3x3::MM => 4.0,
+            CellIndex3x3::TL | CellIndex3x3::TR | CellIndex3x3::BL | CellIndex3x3::BR => 3.0,
+            CellIndex3x3::TM | CellIndex3x3::ML | CellIndex3x3::MR | CellIndex3x3::BM => 2.0,
+        }
+    }
+}
 impl From<CellIndex3x3> for usize {
     fn from(cell: CellIndex3x3) -> Self {
         cell as usize
@@ -418,55 +802,206 @@ impl<T: Default + Clone + Copy> MyMap3x3<T> {
             .map(|(i, cell)| (CellIndex3x3::try_from(i).unwrap(), cell))
     }
 }
+use std::collections::HashMap;
 struct NoTranspositionTable {}
 impl<State, ID> TranspositionTable<State, ID> for NoTranspositionTable {
-    fn new() -> Self {
+    fn new(_expected_num_nodes: usize) -> Self {
         NoTranspositionTable {}
+    }
+}
+struct TranspositionHashMap<State, ID>
+where
+    State: Eq + std::hash::Hash,
+{
+    table: HashMap<State, ID>,
+}
+impl<State, ID> TranspositionTable<State, ID> for TranspositionHashMap<State, ID>
+where
+    State: Eq + std::hash::Hash,
+{
+    fn new(expected_num_nodes: usize) -> Self {
+        Self {
+            table: HashMap::with_capacity(expected_num_nodes),
+        }
+    }
+    fn get(&self, state: &State) -> Option<&ID> {
+        self.table.get(state)
+    }
+    fn insert(&mut self, state: State, value: ID) {
+        assert!(self.table.insert(state, value).is_none());
+    }
+    fn clear(&mut self) {
+        self.table.clear();
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BaseConfig {
     exploration_constant: f32,
+    non_perspective_player_exploration_boost: f32,
     progressive_widening_constant: f32,
     progressive_widening_exponent: f32,
     early_cut_off_depth: usize,
 }
 use rand::prelude::SliceRandom;
-struct ExpandAll {}
-impl<G, H, Config> ExpansionPolicy<G, H, Config> for ExpandAll
+struct HeuristicProgressiveWidening<G, H, Config>
+where
+    G: MCTSGame,
+    H: Heuristic<G>,
+    Config: MCTSConfig,
+{
+    unexpanded_moves: Vec<(f32, G::Move)>,
+    phantom: std::marker::PhantomData<(H, Config)>,
+}
+impl<G, H, Config> HeuristicProgressiveWidening<G, H, Config>
+where
+    G: MCTSGame,
+    H: Heuristic<G>,
+    Config: MCTSConfig,
+{
+    fn allowed_children(visits: usize, mcts_config: &Config) -> usize {
+        if visits == 0 {
+            1
+        } else {
+            (mcts_config.progressive_widening_constant()
+                * (visits as f32).powf(mcts_config.progressive_widening_exponent()))
+            .floor() as usize
+        }
+    }
+    fn threshold(visits: usize, heuristic_config: &H::Config) -> f32 {
+        heuristic_config.progressive_widening_initial_threshold()
+            * heuristic_config
+                .progressive_widening_decay_rate()
+                .powi(visits as i32)
+    }
+}
+impl<G, H, Config> ExpansionPolicy<G, H, Config> for HeuristicProgressiveWidening<G, H, Config>
 where
     G: MCTSGame,
     H: Heuristic<G>,
     Config: MCTSConfig,
 {
     fn new(
-        _state: &G::State,
-        _game_cache: &mut G::Cache,
-        _heuristic_cache: &mut H::Cache,
-        _heuristic_config: &H::Config,
+        state: &G::State,
+        game_cache: &mut G::Cache,
+        heuristic_cache: &mut H::Cache,
+        heuristic_config: &H::Config,
     ) -> Self {
-        ExpandAll {}
+        let is_terminal = match game_cache.get_terminal_value(state) {
+            Some(status) => status.is_some(),
+            None => G::evaluate(state, game_cache).is_some(),
+        };
+        if is_terminal {
+            return HeuristicProgressiveWidening {
+                unexpanded_moves: vec![],
+                phantom: std::marker::PhantomData,
+            };
+        }
+        let unexpanded_moves = G::available_moves(state).collect::<Vec<_>>();
+        let unexpanded_moves = H::sort_moves(
+            state,
+            unexpanded_moves,
+            game_cache,
+            heuristic_cache,
+            heuristic_config,
+        );
+        HeuristicProgressiveWidening {
+            unexpanded_moves,
+            phantom: std::marker::PhantomData,
+        }
+    }
+    fn should_expand(
+        &self,
+        visits: usize,
+        num_parent_children: usize,
+        mcts_config: &Config,
+        heuristic_config: &H::Config,
+    ) -> bool {
+        let threshold = Self::threshold(visits, heuristic_config);
+        num_parent_children < Self::allowed_children(visits, mcts_config)
+            && self
+                .unexpanded_moves
+                .iter()
+                .any(|(score, _)| *score >= threshold)
     }
     fn expandable_moves(
         &mut self,
-        _visits: usize,
-        _num_parent_children: usize,
-        state: &G::State,
-        _mcts_config: &Config,
-        _heuristic_config: &H::Config,
+        visits: usize,
+        num_parent_children: usize,
+        _state: &G::State,
+        mcts_config: &Config,
+        heuristic_config: &H::Config,
     ) -> Vec<G::Move> {
-        let mut moves: Vec<_> = G::available_moves(state).collect();
-        moves.shuffle(&mut rand::thread_rng());
-        moves
+        let allowed_children = Self::allowed_children(visits, mcts_config);
+        if num_parent_children < allowed_children && !self.unexpanded_moves.is_empty() {
+            let num_expandable_moves = self
+                .unexpanded_moves
+                .len()
+                .min(allowed_children - num_parent_children);
+            let threshold = Self::threshold(visits, heuristic_config);
+            let cutoff_index = self
+                .unexpanded_moves
+                .iter()
+                .position(|(score, _)| *score < threshold)
+                .unwrap_or(self.unexpanded_moves.len());
+            let selected_count = cutoff_index.min(num_expandable_moves).max(1);
+            self.unexpanded_moves
+                .drain(..selected_count)
+                .map(|(_, mv)| mv)
+                .collect()
+        } else {
+            vec![]
+        }
     }
 }
-struct DefaultSimulationPolicy {}
+struct HeuristicCutoff {}
 impl<G: MCTSGame, H: Heuristic<G>, Config: MCTSConfig> SimulationPolicy<G, H, Config>
-    for DefaultSimulationPolicy
+    for HeuristicCutoff
 {
+    fn should_cutoff(
+        state: &G::State,
+        depth: usize,
+        game_cache: &mut G::Cache,
+        heuristic_cache: &mut H::Cache,
+        perspective_player: Option<G::Player>,
+        mcts_config: &Config,
+        heuristic_config: &H::Config,
+    ) -> Option<f32> {
+        let heuristic = H::evaluate_state(
+            state,
+            game_cache,
+            heuristic_cache,
+            perspective_player,
+            heuristic_config,
+        );
+        if depth >= mcts_config.early_cut_off_depth()
+            || heuristic <= heuristic_config.early_cut_off_lower_bound()
+            || heuristic >= heuristic_config.early_cut_off_upper_bound()
+        {
+            Some(heuristic)
+        } else {
+            None
+        }
+    }
 }
-struct StaticC {}
-impl<G: MCTSGame, Config: MCTSConfig> UCTPolicy<G, Config> for StaticC {}
+struct DynamicC {}
+impl<G: MCTSGame, Config: MCTSConfig> UCTPolicy<G, Config> for DynamicC {
+    fn exploration_score(
+        visits: usize,
+        parent_visits: usize,
+        mcts_config: &Config,
+        last_player: G::Player,
+        perspective_player: G::Player,
+    ) -> f32 {
+        let factor = if last_player == perspective_player {
+            1.0
+        } else {
+            mcts_config.non_perspective_player_exploration_boost()
+        };
+        let dynamic_c =
+            mcts_config.exploration_constant() * factor / (1.0 + (visits as f32).sqrt());
+        dynamic_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
+    }
+}
 struct CachedUTC {
     exploitation: f32,
     exploration: f32,
@@ -488,23 +1023,49 @@ where
     fn update_exploitation(
         &mut self,
         visits: usize,
-        acc_value: f32,
+        accumulated_value: f32,
         last_player: G::Player,
         perspective_player: G::Player,
     ) {
         self.exploitation =
-            UTC::exploitation_score(acc_value, visits, last_player, perspective_player);
+            UTC::exploitation_score(accumulated_value, visits, last_player, perspective_player);
     }
-    fn get_exploitation(&self, _v: usize, _a: f32, _c: G::Player, _p: G::Player) -> f32 {
+    fn get_exploitation(
+        &self,
+        _visits: usize,
+        _accumulated_value: f32,
+        _last_player: G::Player,
+        _perspective_player: G::Player,
+    ) -> f32 {
         self.exploitation
     }
-    fn update_exploration(&mut self, visits: usize, parent_visits: usize, mcts_config: &Config) {
+    fn update_exploration(
+        &mut self,
+        visits: usize,
+        parent_visits: usize,
+        mcts_config: &Config,
+        last_player: G::Player,
+        perspective_player: G::Player,
+    ) {
         if self.last_parent_visits != parent_visits {
-            self.exploration = UTC::exploration_score(visits, parent_visits, mcts_config);
+            self.exploration = UTC::exploration_score(
+                visits,
+                parent_visits,
+                mcts_config,
+                last_player,
+                perspective_player,
+            );
             self.last_parent_visits = parent_visits;
         }
     }
-    fn get_exploration(&self, _v: usize, _p: usize, _mc: &Config) -> f32 {
+    fn get_exploration(
+        &self,
+        _visits: usize,
+        _parent_visits: usize,
+        _mcts_config: &Config,
+        _last_player: G::Player,
+        _perspective_player: G::Player,
+    ) -> f32 {
         self.exploration
     }
 }
@@ -528,31 +1089,15 @@ impl<State, Move> HeuristicCache<State, Move> for NoHeuristicCache<State, Move> 
         }
     }
 }
-struct NoHeuristic {}
-impl HeuristicConfig for NoHeuristic {}
-impl<G: MCTSGame> Heuristic<G> for NoHeuristic {
-    type Cache = NoHeuristicCache<G::State, G::Move>;
-    type Config = Self;
-    fn evaluate_state(
-        state: &G::State,
-        game_cache: &mut G::Cache,
-        _heuristic_cache: &mut Self::Cache,
-        _perspective_player: Option<G::Player>,
-        _heuristic_config: &Self::Config,
-    ) -> f32 {
-        G::evaluate(state, game_cache).unwrap_or(0.5)
-    }
-    fn evaluate_move(
-        _state: &G::State,
-        _mv: &G::Move,
-        _game_cache: &mut G::Cache,
-        _heuristic_cache: &mut Self::Cache,
-        _heuristic_config: &Self::Config,
-    ) -> f32 {
-        0.0
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BaseHeuristicConfig {
+    progressive_widening_initial_threshold: f32,
+    progressive_widening_decay_rate: f32,
+    early_cut_off_lower_bound: f32,
+    early_cut_off_upper_bound: f32,
 }
 use rand::prelude::IteratorRandom;
+type PlainTTHashMap<State> = TranspositionHashMap<State, usize>;
 struct PlainMCTS<G, H, MC, UC, TT, UP, EP, SP>
 where
     G: MCTSGame,
@@ -583,14 +1128,14 @@ where
     EP: ExpansionPolicy<G, H, MC>,
     SP: SimulationPolicy<G, H, MC>,
 {
-    fn new(mcts_config: MC, heuristic_config: H::Config) -> Self {
+    fn new(mcts_config: MC, heuristic_config: H::Config, expected_num_nodes: usize) -> Self {
         Self {
-            tree: PlainTree::new(),
+            tree: PlainTree::new(expected_num_nodes),
             mcts_config,
             heuristic_config,
             game_cache: G::Cache::new(),
             heuristic_cache: H::Cache::new(),
-            transposition_table: TT::new(),
+            transposition_table: TT::new(expected_num_nodes),
             phantom: std::marker::PhantomData,
         }
     }
@@ -659,7 +1204,7 @@ where
         );
         let new_root = PlainNode::new(state.clone(), expansion_policy);
         let root_id = self.tree.init_root(new_root);
-        self.transposition_table = TT::new();
+        self.transposition_table.clear();
         self.transposition_table.insert(state.clone(), root_id);
     }
     fn iterate(&mut self) {
@@ -693,11 +1238,9 @@ where
                 let mut best_utc = f32::NEG_INFINITY;
                 for vec_index in 0..num_parent_children {
                     let (child_index, _) = tree.get_children(current_id)[vec_index];
-                    let utc = tree.get_node_mut(child_index).calc_utc(
-                        parent_visits,
-                        G::perspective_player(),
-                        mcts_config,
-                    );
+                    let utc = tree
+                        .get_node_mut(child_index)
+                        .calc_utc(parent_visits, mcts_config);
                     if utc > best_utc {
                         best_utc = utc;
                         best_child_index = Some(child_index);
@@ -717,6 +1260,10 @@ where
                     num_parent_children,
                     mcts_config,
                     heuristic_config,
+                );
+                assert!(
+                    !expandable_moves.is_empty(),
+                    "expandable moves should never be empty."
                 );
                 for mv in expandable_moves {
                     let new_state =
@@ -854,12 +1401,7 @@ where
             G::perspective_player(),
         );
     }
-    fn calc_utc(
-        &mut self,
-        parent_visits: usize,
-        perspective_player: G::Player,
-        mcts_config: &MC,
-    ) -> f32 {
+    fn calc_utc(&mut self, parent_visits: usize, mcts_config: &MC) -> f32 {
         if self.visits == 0 {
             return f32::INFINITY;
         }
@@ -867,13 +1409,22 @@ where
             self.visits,
             self.accumulated_value,
             G::last_player(&self.state),
-            perspective_player,
+            G::perspective_player(),
         );
-        self.utc_cache
-            .update_exploration(self.visits, parent_visits, mcts_config);
-        let exploration = self
-            .utc_cache
-            .get_exploration(self.visits, parent_visits, mcts_config);
+        self.utc_cache.update_exploration(
+            self.visits,
+            parent_visits,
+            mcts_config,
+            G::last_player(&self.state),
+            G::perspective_player(),
+        );
+        let exploration = self.utc_cache.get_exploration(
+            self.visits,
+            parent_visits,
+            mcts_config,
+            G::last_player(&self.state),
+            G::perspective_player(),
+        );
         exploitation + exploration
     }
     fn should_expand(
@@ -933,10 +1484,10 @@ where
     UC: UTCCache<G, A::UTC, A::Config>,
 {
     type Node = Node<G, H, A, UC>;
-    fn new() -> Self {
+    fn new(expected_num_nodes: usize) -> Self {
         PlainTree {
-            nodes: vec![],
-            edges: vec![],
+            nodes: Vec::with_capacity(expected_num_nodes),
+            edges: Vec::with_capacity(expected_num_nodes),
             root_id: 0,
             phantom: std::marker::PhantomData,
         }
@@ -983,7 +1534,7 @@ where
     }
 }
 trait TranspositionTable<State, ID> {
-    fn new() -> Self;
+    fn new(expected_num_nodes: usize) -> Self;
     fn get(&self, _state: &State) -> Option<&ID> {
         None
     }
@@ -993,6 +1544,9 @@ trait TranspositionTable<State, ID> {
 trait MCTSConfig {
     fn exploration_constant(&self) -> f32 {
         1.4
+    }
+    fn non_perspective_player_exploration_boost(&self) -> f32 {
+        1.0
     }
     fn progressive_widening_constant(&self) -> f32 {
         2.0
@@ -1031,7 +1585,13 @@ trait UCTPolicy<G: MCTSGame, Config: MCTSConfig> {
             1.0 - raw
         }
     }
-    fn exploration_score(visits: usize, parent_visits: usize, mcts_config: &Config) -> f32 {
+    fn exploration_score(
+        visits: usize,
+        parent_visits: usize,
+        mcts_config: &Config,
+        _last_player: G::Player,
+        _perspective_player: G::Player,
+    ) -> f32 {
         mcts_config.exploration_constant() * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
@@ -1080,7 +1640,7 @@ where
     A: MCTSAlgo<G, H>,
 {
     type Node: MCTSNode<G, H, A::Config, A::UTC, A::Expansion>;
-    fn new() -> Self;
+    fn new(expected_num_nodes: usize) -> Self;
     fn init_root(&mut self, root_value: Self::Node) -> A::NodeID;
     fn set_root(&mut self, new_root_id: A::NodeID);
     fn root_id(&self) -> Option<A::NodeID>;
@@ -1105,19 +1665,33 @@ where
     fn update_exploitation(
         &mut self,
         visits: usize,
-        acc_value: f32,
+        accumulated_value: f32,
         last_player: G::Player,
         perspective_player: G::Player,
     );
     fn get_exploitation(
         &self,
         visits: usize,
-        acc_value: f32,
+        accumulated_value: f32,
         last_player: G::Player,
         perspective_player: G::Player,
     ) -> f32;
-    fn update_exploration(&mut self, visits: usize, parent_visits: usize, mcts_config: &Config);
-    fn get_exploration(&self, visits: usize, parent_visits: usize, mcts_config: &Config) -> f32;
+    fn update_exploration(
+        &mut self,
+        visits: usize,
+        parent_visits: usize,
+        mcts_config: &Config,
+        last_player: G::Player,
+        perspective_player: G::Player,
+    );
+    fn get_exploration(
+        &self,
+        visits: usize,
+        parent_visits: usize,
+        mcts_config: &Config,
+        last_player: G::Player,
+        perspective_player: G::Player,
+    ) -> f32;
 }
 trait MCTSNode<G, H, MC, UP, EP>
 where
@@ -1133,12 +1707,7 @@ where
     fn get_visits(&self) -> usize;
     fn get_accumulated_value(&self) -> f32;
     fn update_stats(&mut self, result: f32);
-    fn calc_utc(
-        &mut self,
-        parent_visits: usize,
-        perspective_player: G::Player,
-        mcts_config: &MC,
-    ) -> f32;
+    fn calc_utc(&mut self, parent_visits: usize, mcts_config: &MC) -> f32;
     fn should_expand(
         &self,
         visits: usize,
@@ -1256,6 +1825,7 @@ impl GamePlayer for TicTacToeStatus {
         }
     }
 }
+use std::collections::HashSet;
 #[repr(i8)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 enum TicTacToeStatus {
@@ -1338,5 +1908,86 @@ impl TicTacToeGameData {
     }
     fn iter_map(&self) -> impl Iterator<Item = (CellIndex3x3, &TicTacToeStatus)> {
         self.map.iterate()
+    }
+    fn count_non_vacant_cells(&self) -> usize {
+        self.map
+            .iterate()
+            .filter(|(_, v)| v.is_not_vacant())
+            .count()
+    }
+    fn get_threats(&self) -> (HashSet<CellIndex3x3>, HashSet<CellIndex3x3>) {
+        let mut me_threats: HashSet<CellIndex3x3> = HashSet::new();
+        let mut opp_threats: HashSet<CellIndex3x3> = HashSet::new();
+        for score_line in Self::SCORE_LINES.iter() {
+            let (threat, vacant) = score_line.iter().fold(
+                (0, CellIndex3x3::default()),
+                |(mut threat, mut vacant), element| {
+                    let cell_value = self.map.get_cell(*element);
+                    if cell_value.is_vacant() {
+                        vacant = *element;
+                    }
+                    threat += *cell_value as i8;
+                    (threat, vacant)
+                },
+            );
+            match threat {
+                2 => {
+                    me_threats.insert(vacant);
+                }
+                -2 => {
+                    opp_threats.insert(vacant);
+                }
+                _ => (),
+            }
+        }
+        (me_threats, opp_threats)
+    }
+    fn get_meta_cell_threats(&self, cell: CellIndex3x3) -> (u8, u8, u8, u8) {
+        if self.get_cell_value(cell).is_not_vacant() {
+            return (0, 0, 0, 0);
+        }
+        let mut my_meta_threats = 0;
+        let mut my_meta_small_threats = 0;
+        let mut opp_meta_threats = 0;
+        let mut opp_meta_small_threats = 0;
+        for score_line in Self::SCORE_LINES.iter() {
+            if !score_line.contains(&cell) {
+                continue;
+            }
+            let threat: i8 = score_line
+                .iter()
+                .map(|&c| self.get_cell_value(c) as i8)
+                .sum();
+            match threat {
+                2 => my_meta_threats += 1,
+                1 => my_meta_small_threats += 1,
+                -1 => opp_meta_small_threats += 1,
+                -2 => opp_meta_threats += 1,
+                _ => (),
+            }
+        }
+        (
+            my_meta_threats,
+            my_meta_small_threats,
+            opp_meta_threats,
+            opp_meta_small_threats,
+        )
+    }
+    fn get_board_control(&self) -> (f32, f32) {
+        self.map.iterate().fold(
+            (0.0, 0.0),
+            |(mut my_control, mut opp_control), (cell, status)| {
+                match status {
+                    TicTacToeStatus::Me => {
+                        my_control += cell.cell_weight();
+                    }
+                    TicTacToeStatus::Opp => {
+                        opp_control += cell.cell_weight();
+                    }
+                    TicTacToeStatus::Vacant | TicTacToeStatus::Tie => {}
+                }
+                (my_control, opp_control)
+            },
+        )
     }
 }

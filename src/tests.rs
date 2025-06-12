@@ -17,6 +17,8 @@ pub type HPWDefaultTTTOldHeuristic =
 
 const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(995);
 const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
+const EXPECTED_NUM_NODES: usize = 220_000;
+const EXPECTED_NUM_NODES_PLAIN: usize = 400_000;
 
 #[test]
 fn test_mcts_ult_ttt_no_game_cache() {
@@ -36,6 +38,7 @@ fn test_mcts_ult_ttt_no_game_cache() {
         > = PlainMCTS::new(
             UltTTTMCTSConfig::default(),
             UltTTTHeuristicConfig::default(),
+            EXPECTED_NUM_NODES,
         );
         let mut first_ult_ttt_game_data = UltTTT::new();
         first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
@@ -49,7 +52,11 @@ fn test_mcts_ult_ttt_no_game_cache() {
             DynamicC,
             ExpandAll,
             DefaultSimulationPolicy,
-        > = PlainMCTS::new(UltTTTMCTSConfig::default(), NoHeuristic {});
+        > = PlainMCTS::new(
+            UltTTTMCTSConfig::default(),
+            NoHeuristic {},
+            EXPECTED_NUM_NODES_PLAIN,
+        );
         let mut second_ult_ttt_game_data = UltTTT::new();
         second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
         let mut second_time_out = TIME_OUT_FIRST_TURN;
@@ -156,6 +163,7 @@ fn test_mcts_ult_ttt_new_vs_old_heuristic() {
         > = PlainMCTS::new(
             UltTTTMCTSConfig::new_optimized(),
             UltTTTHeuristicConfig::new_optimized(),
+            EXPECTED_NUM_NODES,
         );
         let mut first_ult_ttt_game_data = UltTTT::new();
         let mut first_time_out = TIME_OUT_FIRST_TURN;
@@ -171,6 +179,7 @@ fn test_mcts_ult_ttt_new_vs_old_heuristic() {
         > = PlainMCTS::new(
             UltTTTMCTSConfig::optimized(),
             UltTTTHeuristicConfig::optimized(),
+            EXPECTED_NUM_NODES,
         );
         let mut second_ult_ttt_game_data = UltTTT::new();
         let mut second_time_out = TIME_OUT_FIRST_TURN;
@@ -305,6 +314,7 @@ fn test_mcts_ult_ttt_set_root_vs_reset_root_no_tt() {
         > = PlainMCTS::new(
             UltTTTMCTSConfig::new_optimized(),
             UltTTTHeuristicConfig::new_optimized(),
+            EXPECTED_NUM_NODES,
         );
         let mut first_ult_ttt_game_data = UltTTT::new();
         let mut first_time_out = TIME_OUT_FIRST_TURN;
@@ -320,6 +330,7 @@ fn test_mcts_ult_ttt_set_root_vs_reset_root_no_tt() {
         > = PlainMCTS::new(
             UltTTTMCTSConfig::optimized(),
             UltTTTHeuristicConfig::optimized(),
+            EXPECTED_NUM_NODES,
         );
         let mut second_ult_ttt_game_data = UltTTT::new();
         let mut second_time_out = TIME_OUT_FIRST_TURN;

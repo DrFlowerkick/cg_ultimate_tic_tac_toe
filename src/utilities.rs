@@ -8,7 +8,7 @@ use anyhow::Context;
 use my_lib::my_mcts::{
     BaseConfig, BaseHeuristicConfig, CachedUTC, DefaultSimulationPolicy, DynamicC, ExpandAll,
     HeuristicCutoff, MCTSAlgo, MCTSGame, NoHeuristic, NoTranspositionTable, PlainMCTS,
-    PlainTTHashMap, StaticC
+    PlainTTHashMap,
 };
 use my_lib::my_optimizer::{
     increment_progress_counter_by, update_progress, LogFormat, ObjectiveFunction, ParamBound,
@@ -20,8 +20,11 @@ use std::time::{Duration, Instant};
 use tracing::{span, Level};
 use uuid::Uuid;
 
-const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(995);
-const TIME_OUT_SUCCESSIVE_TURNS: Duration = Duration::from_millis(95);
+const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(990);
+const TIME_OUT_OPP_PERSPECTIVE: Duration = Duration::from_millis(80);
+const TIME_OUT_ME_PERSPECTIVE: Duration = Duration::from_millis(85);
+const EXPECTED_NUM_NODES: usize = 220_000;
+const EXPECTED_NUM_NODES_PLAIN: usize = 400_000;
 
 pub struct EarlyBreakOff {
     pub num_check_matches: usize,
@@ -108,20 +111,31 @@ pub type UltTTTMCTSSecond = PlainMCTS<
     UltTTTMCTSConfig,
     CachedUTC,
     NoTranspositionTable,
-    StaticC,
+    DynamicC,
     ExpandAll,
     DefaultSimulationPolicy,
 >;
+
+// structure of run_match() tries to represent timing on codingame, which was measured with debug messages
+// 1.) first turn: long time out
+// 2.) than iterate from perspective of opponent (about 70 ms)
+// 3.) than iterate frm my perspective (about 70 ms)
+// 4.) if not terminal, go to 2.)
+// Since we have here two MCTS players, both players get same timings
 
 pub fn run_match(
     config: Config,
     heuristic_is_start_player: bool,
 ) -> (f64, UltTTTMCTSFirst, UltTTTMCTSSecond) {
-    let mut first_mcts_ult_ttt: UltTTTMCTSFirst = PlainMCTS::new(config.mcts, config.heuristic);
+    let mut first_mcts_ult_ttt: UltTTTMCTSFirst =
+        PlainMCTS::new(config.mcts, config.heuristic, EXPECTED_NUM_NODES);
     let mut first_ult_ttt_game_data = UltTTT::new();
     let mut first_time_out = TIME_OUT_FIRST_TURN;
-    let mut second_mcts_ult_ttt: UltTTTMCTSSecond =
-        PlainMCTS::new(UltTTTMCTSConfig::default(), NoHeuristic {});
+    let mut second_mcts_ult_ttt: UltTTTMCTSSecond = PlainMCTS::new(
+        UltTTTMCTSConfig::default(),
+        NoHeuristic {},
+        EXPECTED_NUM_NODES_PLAIN,
+    );
     let mut second_ult_ttt_game_data = UltTTT::new();
     let mut second_time_out = TIME_OUT_FIRST_TURN;
 
@@ -140,6 +154,7 @@ pub fn run_match(
     {
         turn_counter += 1;
         if first {
+            // iterate first tree from first perspective
             let start = Instant::now();
             if !first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data) && turn_counter > 2 {
                 tracing::debug!(
@@ -151,7 +166,7 @@ pub fn run_match(
             while start.elapsed() < first_time_out {
                 first_mcts_ult_ttt.iterate();
             }
-            first_time_out = TIME_OUT_SUCCESSIVE_TURNS;
+            first_time_out = TIME_OUT_ME_PERSPECTIVE;
             let selected_move = *first_mcts_ult_ttt.select_move();
             first_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
                 &first_ult_ttt_game_data,
@@ -163,8 +178,22 @@ pub fn run_match(
                 &selected_move,
                 &mut second_mcts_ult_ttt.game_cache,
             );
+            if UltTTTMCTSGame::evaluate(
+                &first_ult_ttt_game_data,
+                &mut first_mcts_ult_ttt.game_cache,
+            )
+            .is_none()
+            {
+                // if not terminal, iterate first tree from second perspective
+                first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data);
+                let start = Instant::now();
+                while start.elapsed() < TIME_OUT_OPP_PERSPECTIVE {
+                    first_mcts_ult_ttt.iterate();
+                }
+            }
             first = false;
         } else {
+            // iterate second tree from second perspective
             let start = Instant::now();
             if !second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data) && turn_counter > 2 {
                 tracing::debug!(
@@ -176,7 +205,7 @@ pub fn run_match(
             while start.elapsed() < second_time_out {
                 second_mcts_ult_ttt.iterate();
             }
-            second_time_out = TIME_OUT_SUCCESSIVE_TURNS;
+            second_time_out = TIME_OUT_ME_PERSPECTIVE;
             let selected_move = *second_mcts_ult_ttt.select_move();
             second_ult_ttt_game_data = UltTTTMCTSGame::apply_move(
                 &second_ult_ttt_game_data,
@@ -188,6 +217,19 @@ pub fn run_match(
                 &selected_move,
                 &mut first_mcts_ult_ttt.game_cache,
             );
+            if UltTTTMCTSGame::evaluate(
+                &first_ult_ttt_game_data,
+                &mut first_mcts_ult_ttt.game_cache,
+            )
+            .is_none()
+            {
+                // if not terminal, iterate second tree from first perspective
+                let start = Instant::now();
+                second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data);
+                while start.elapsed() < TIME_OUT_OPP_PERSPECTIVE {
+                    second_mcts_ult_ttt.iterate();
+                }
+            }
             first = true;
         }
     }
@@ -209,35 +251,36 @@ impl TryFrom<&[f64]> for Config {
     type Error = anyhow::Error;
 
     fn try_from(value: &[f64]) -> Result<Self, Self::Error> {
-        if value.len() != 18 {
+        if value.len() != 19 {
             return Err(anyhow::anyhow!("Wrong number of parameters"));
         }
         Ok(Config {
             mcts: UltTTTMCTSConfig {
                 base_config: BaseConfig {
                     exploration_constant: value[0] as f32,
-                    progressive_widening_constant: value[1] as f32,
-                    progressive_widening_exponent: value[2] as f32,
-                    early_cut_off_depth: value[3].round() as usize,
+                    non_perspective_player_exploration_boost: value[1] as f32,
+                    progressive_widening_constant: value[2] as f32,
+                    progressive_widening_exponent: value[3] as f32,
+                    early_cut_off_depth: value[4].round() as usize,
                 },
             },
             heuristic: UltTTTHeuristicConfig {
                 base_config: BaseHeuristicConfig {
-                    progressive_widening_initial_threshold: value[4] as f32,
-                    progressive_widening_decay_rate: value[5] as f32,
-                    early_cut_off_lower_bound: value[6] as f32,
-                    early_cut_off_upper_bound: value[7] as f32,
+                    progressive_widening_initial_threshold: value[5] as f32,
+                    progressive_widening_decay_rate: value[6] as f32,
+                    early_cut_off_lower_bound: value[7] as f32,
+                    early_cut_off_upper_bound: value[8] as f32,
                 },
-                control_base_weight: value[8] as f32,
-                control_progress_offset: value[9] as f32,
-                control_local_steepness: value[10] as f32,
-                control_global_steepness: value[11] as f32,
-                meta_cell_big_threat: value[12] as f32,
-                meta_cell_small_threat: value[13] as f32,
-                threat_steepness: value[14] as f32,
-                constraint_factor: value[15] as f32,
-                free_choice_constraint_factor: value[16] as f32,
-                direct_loss_value: value[17] as f32,
+                control_base_weight: value[9] as f32,
+                control_progress_offset: value[10] as f32,
+                control_local_steepness: value[11] as f32,
+                control_global_steepness: value[12] as f32,
+                meta_cell_big_threat: value[13] as f32,
+                meta_cell_small_threat: value[14] as f32,
+                threat_steepness: value[15] as f32,
+                constraint_factor: value[16] as f32,
+                free_choice_constraint_factor: value[17] as f32,
+                direct_loss_value: value[18] as f32,
             },
         })
     }
@@ -247,6 +290,10 @@ impl From<Config> for Vec<f64> {
     fn from(value: Config) -> Self {
         vec![
             value.mcts.base_config.exploration_constant as f64,
+            value
+                .mcts
+                .base_config
+                .non_perspective_player_exploration_boost as f64,
             value.mcts.base_config.progressive_widening_constant as f64,
             value.mcts.base_config.progressive_widening_exponent as f64,
             value.mcts.base_config.early_cut_off_depth as f64,
@@ -308,6 +355,7 @@ impl Config {
     pub fn parameter_names() -> Vec<String> {
         vec![
             "exploration_constant".into(),
+            "non_perspective_player_exploration_boost".into(),
             "progressive_widening_constant".into(),
             "progressive_widening_exponent".into(),
             "early_cut_off_depth".into(),
@@ -332,6 +380,7 @@ impl Config {
             mcts: UltTTTMCTSConfig {
                 base_config: BaseConfig {
                     exploration_constant: 1.0,
+                    non_perspective_player_exploration_boost: 0.5,
                     progressive_widening_constant: 1.0,
                     progressive_widening_exponent: 1.0 / 3.0,
                     early_cut_off_depth: 10,
@@ -363,6 +412,7 @@ impl Config {
             mcts: UltTTTMCTSConfig {
                 base_config: BaseConfig {
                     exploration_constant: 2.0,
+                    non_perspective_player_exploration_boost: 2.5,
                     progressive_widening_constant: 4.0,
                     progressive_widening_exponent: 2.0 / 3.0,
                     early_cut_off_depth: 35,
