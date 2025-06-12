@@ -6,9 +6,8 @@ use super::{
 };
 use anyhow::Context;
 use my_lib::my_mcts::{
-    BaseConfig, BaseHeuristicConfig, CachedUTC, DefaultSimulationPolicy, DynamicC, ExpandAll,
-    HeuristicCutoff, MCTSAlgo, MCTSGame, NoHeuristic, NoTranspositionTable, PlainMCTS,
-    PlainTTHashMap,
+    BaseConfig, BaseHeuristicConfig, CachedUTC, DynamicC, DynamicCWithExplorationBoost,
+    HeuristicCutoff, MCTSAlgo, MCTSConfig, MCTSGame, PlainMCTS, PlainTTHashMap,
 };
 use my_lib::my_optimizer::{
     increment_progress_counter_by, update_progress, LogFormat, ObjectiveFunction, ParamBound,
@@ -20,11 +19,11 @@ use std::time::{Duration, Instant};
 use tracing::{span, Level};
 use uuid::Uuid;
 
+const TIME_OUT_TREE_BUILD_UP: Duration = Duration::from_millis(2500);
 const TIME_OUT_FIRST_TURN: Duration = Duration::from_millis(990);
 const TIME_OUT_OPP_PERSPECTIVE: Duration = Duration::from_millis(80);
 const TIME_OUT_ME_PERSPECTIVE: Duration = Duration::from_millis(85);
-const EXPECTED_NUM_NODES: usize = 220_000;
-const EXPECTED_NUM_NODES_PLAIN: usize = 400_000;
+const EXPECTED_NUM_NODES: usize = 200_000;
 
 pub struct EarlyBreakOff {
     pub num_check_matches: usize,
@@ -70,7 +69,7 @@ impl ObjectiveFunction for UltTTTObjectiveFunction {
         let mut sum_score: f64 = 0.0;
         for i in 0..self.num_matches {
             update_progress(Some(self.estimated_num_of_steps), self.progress_step_size);
-            let (score, _, _) = run_match(config, i % 2 == 0);
+            let (score, _, _) = run_match(config.clone(), i % 2 == 0);
             sum_score += score;
             if let Some(ref ebo) = self.early_break_off {
                 let count_matches = i + 1;
@@ -101,19 +100,19 @@ pub type UltTTTMCTSFirst = PlainMCTS<
     UltTTTMCTSConfig,
     CachedUTC,
     PlainTTHashMap<UltTTT>,
-    DynamicC,
+    DynamicCWithExplorationBoost,
     HPWDefaultTTTNoGameCache,
     HeuristicCutoff,
 >;
 pub type UltTTTMCTSSecond = PlainMCTS<
     UltTTTMCTSGame,
-    NoHeuristic,
+    UltTTTHeuristic,
     UltTTTMCTSConfig,
     CachedUTC,
-    NoTranspositionTable,
+    PlainTTHashMap<UltTTT>,
     DynamicC,
-    ExpandAll,
-    DefaultSimulationPolicy,
+    HPWDefaultTTTNoGameCache,
+    HeuristicCutoff,
 >;
 
 // structure of run_match() tries to represent timing on codingame, which was measured with debug messages
@@ -127,42 +126,66 @@ pub fn run_match(
     config: Config,
     heuristic_is_start_player: bool,
 ) -> (f64, UltTTTMCTSFirst, UltTTTMCTSSecond) {
+    // Initial config without exploration_boost
+    let mut initial_config = config.mcts.clone();
+    initial_config.base_config.exploration_boost = [
+        (TicTacToeStatus::First, 1.0),
+        (TicTacToeStatus::Second, 1.0),
+    ]
+    .into();
+
     let mut first_mcts_ult_ttt: UltTTTMCTSFirst =
-        PlainMCTS::new(config.mcts, config.heuristic, EXPECTED_NUM_NODES);
+        PlainMCTS::new(initial_config, config.heuristic, EXPECTED_NUM_NODES);
     let mut first_ult_ttt_game_data = UltTTT::new();
+    first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data);
     let mut first_time_out = TIME_OUT_FIRST_TURN;
     let mut second_mcts_ult_ttt: UltTTTMCTSSecond = PlainMCTS::new(
-        UltTTTMCTSConfig::default(),
-        NoHeuristic {},
-        EXPECTED_NUM_NODES_PLAIN,
+        UltTTTMCTSConfig::new_optimized(),
+        UltTTTHeuristicConfig::new_optimized(),
+        EXPECTED_NUM_NODES,
     );
     let mut second_ult_ttt_game_data = UltTTT::new();
+    second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data);
     let mut second_time_out = TIME_OUT_FIRST_TURN;
 
+    // player first is always heuristic player, but only every second game start player
     let mut first = if heuristic_is_start_player {
-        first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
-        second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
         true
     } else {
-        first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
-        second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
+        first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Second);
+        second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Second);
         false
     };
+
+    // initial tree build up before codingame sends first initial input
+    // first first
+    let start = Instant::now();
+    while start.elapsed() < TIME_OUT_TREE_BUILD_UP {
+        first_mcts_ult_ttt.iterate();
+    }
+    // apply exploration boost to config of first
+    first_mcts_ult_ttt.mcts_config.base_config.exploration_boost =
+        config.mcts.base_config.exploration_boost;
+    // second second
+    let start = Instant::now();
+    while start.elapsed() < TIME_OUT_TREE_BUILD_UP {
+        second_mcts_ult_ttt.iterate();
+    }
+
     let mut turn_counter = 0;
     while UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
         .is_none()
     {
-        turn_counter += 1;
         if first {
             // iterate first tree from first perspective
-            let start = Instant::now();
-            if !first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data) && turn_counter > 2 {
+            if turn_counter > 0 && !first_mcts_ult_ttt.set_root(&first_ult_ttt_game_data) {
                 tracing::debug!(
                     heuristic_is_start_player,
                     turn_counter,
                     "Reset tree root of first."
                 );
             }
+            let start = Instant::now();
             while start.elapsed() < first_time_out {
                 first_mcts_ult_ttt.iterate();
             }
@@ -194,14 +217,14 @@ pub fn run_match(
             first = false;
         } else {
             // iterate second tree from second perspective
-            let start = Instant::now();
-            if !second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data) && turn_counter > 2 {
+            if turn_counter > 0 && !second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data) {
                 tracing::debug!(
                     heuristic_is_start_player,
                     turn_counter,
                     "Reset tree root of second."
                 );
             }
+            let start = Instant::now();
             while start.elapsed() < second_time_out {
                 second_mcts_ult_ttt.iterate();
             }
@@ -232,6 +255,7 @@ pub fn run_match(
             }
             first = true;
         }
+        turn_counter += 1;
     }
     (
         UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
@@ -241,7 +265,7 @@ pub fn run_match(
     )
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Config {
     pub mcts: UltTTTMCTSConfig,
     pub heuristic: UltTTTHeuristicConfig,
@@ -251,36 +275,40 @@ impl TryFrom<&[f64]> for Config {
     type Error = anyhow::Error;
 
     fn try_from(value: &[f64]) -> Result<Self, Self::Error> {
-        if value.len() != 19 {
+        if value.len() != 20 {
             return Err(anyhow::anyhow!("Wrong number of parameters"));
         }
         Ok(Config {
             mcts: UltTTTMCTSConfig {
                 base_config: BaseConfig {
                     exploration_constant: value[0] as f32,
-                    non_perspective_player_exploration_boost: value[1] as f32,
-                    progressive_widening_constant: value[2] as f32,
-                    progressive_widening_exponent: value[3] as f32,
-                    early_cut_off_depth: value[4].round() as usize,
+                    exploration_boost: [
+                        (TicTacToeStatus::First, value[1] as f32),
+                        (TicTacToeStatus::Second, value[2] as f32),
+                    ]
+                    .into(),
+                    progressive_widening_constant: value[3] as f32,
+                    progressive_widening_exponent: value[4] as f32,
+                    early_cut_off_depth: value[5].round() as usize,
                 },
             },
             heuristic: UltTTTHeuristicConfig {
                 base_config: BaseHeuristicConfig {
-                    progressive_widening_initial_threshold: value[5] as f32,
-                    progressive_widening_decay_rate: value[6] as f32,
-                    early_cut_off_lower_bound: value[7] as f32,
-                    early_cut_off_upper_bound: value[8] as f32,
+                    progressive_widening_initial_threshold: value[6] as f32,
+                    progressive_widening_decay_rate: value[7] as f32,
+                    early_cut_off_lower_bound: value[8] as f32,
+                    early_cut_off_upper_bound: value[9] as f32,
                 },
-                control_base_weight: value[9] as f32,
-                control_progress_offset: value[10] as f32,
-                control_local_steepness: value[11] as f32,
-                control_global_steepness: value[12] as f32,
-                meta_cell_big_threat: value[13] as f32,
-                meta_cell_small_threat: value[14] as f32,
-                threat_steepness: value[15] as f32,
-                constraint_factor: value[16] as f32,
-                free_choice_constraint_factor: value[17] as f32,
-                direct_loss_value: value[18] as f32,
+                control_base_weight: value[10] as f32,
+                control_progress_offset: value[11] as f32,
+                control_local_steepness: value[12] as f32,
+                control_global_steepness: value[13] as f32,
+                meta_cell_big_threat: value[14] as f32,
+                meta_cell_small_threat: value[15] as f32,
+                threat_steepness: value[16] as f32,
+                constraint_factor: value[17] as f32,
+                free_choice_constraint_factor: value[18] as f32,
+                direct_loss_value: value[19] as f32,
             },
         })
     }
@@ -288,12 +316,12 @@ impl TryFrom<&[f64]> for Config {
 
 impl From<Config> for Vec<f64> {
     fn from(value: Config) -> Self {
+        let exploration_boost_first = value.mcts.exploration_boost(TicTacToeStatus::First) as f64;
+        let exploration_boost_second = value.mcts.exploration_boost(TicTacToeStatus::Second) as f64;
         vec![
             value.mcts.base_config.exploration_constant as f64,
-            value
-                .mcts
-                .base_config
-                .non_perspective_player_exploration_boost as f64,
+            exploration_boost_first,
+            exploration_boost_second,
             value.mcts.base_config.progressive_widening_constant as f64,
             value.mcts.base_config.progressive_widening_exponent as f64,
             value.mcts.base_config.early_cut_off_depth as f64,
@@ -323,7 +351,7 @@ impl Serialize for Config {
     where
         S: Serializer,
     {
-        let values: Vec<f64> = (*self).into();
+        let values: Vec<f64> = self.clone().into();
         let names = Config::parameter_names();
 
         if names.len() != values.len() {
@@ -355,7 +383,8 @@ impl Config {
     pub fn parameter_names() -> Vec<String> {
         vec![
             "exploration_constant".into(),
-            "non_perspective_player_exploration_boost".into(),
+            "exploration_boost_first".into(),
+            "exploration_boost_second".into(),
             "progressive_widening_constant".into(),
             "progressive_widening_exponent".into(),
             "early_cut_off_depth".into(),
@@ -380,7 +409,11 @@ impl Config {
             mcts: UltTTTMCTSConfig {
                 base_config: BaseConfig {
                     exploration_constant: 1.0,
-                    non_perspective_player_exploration_boost: 0.5,
+                    exploration_boost: [
+                        (TicTacToeStatus::First, 0.5),
+                        (TicTacToeStatus::Second, 0.5),
+                    ]
+                    .into(),
                     progressive_widening_constant: 1.0,
                     progressive_widening_exponent: 1.0 / 3.0,
                     early_cut_off_depth: 10,
@@ -412,7 +445,11 @@ impl Config {
             mcts: UltTTTMCTSConfig {
                 base_config: BaseConfig {
                     exploration_constant: 2.0,
-                    non_perspective_player_exploration_boost: 2.5,
+                    exploration_boost: [
+                        (TicTacToeStatus::First, 2.5),
+                        (TicTacToeStatus::Second, 2.5),
+                    ]
+                    .into(),
                     progressive_widening_constant: 4.0,
                     progressive_widening_exponent: 2.0 / 3.0,
                     early_cut_off_depth: 35,

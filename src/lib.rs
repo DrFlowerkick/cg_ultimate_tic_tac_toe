@@ -101,8 +101,8 @@ impl UltTTT {
             map: MyMap3x3::new(),
             status_map: TicTacToeGameData::new(),
             next_action_constraint: NextActionConstraint::Init,
-            current_player: TicTacToeStatus::Me,
-            last_player: TicTacToeStatus::Me,
+            current_player: TicTacToeStatus::First,
+            last_player: TicTacToeStatus::First,
         }
     }
     pub fn set_current_player(&mut self, player: TicTacToeStatus) {
@@ -155,6 +155,7 @@ pub type HPWDefaultTTTWithGameCache = ProgressiveWidening<UltTTTMCTSGame, UltTTT
 pub type HPWDefaultTTTNoGameCache =
     HeuristicProgressiveWidening<UltTTTMCTSGame, UltTTTHeuristic, UltTTTMCTSConfig>;
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct UltTTTMCTSGame {}
 
 impl MCTSGame for UltTTTMCTSGame {
@@ -238,8 +239,8 @@ impl MCTSGame for UltTTTMCTSGame {
             let my_squares = state.status_map.count_me_cells();
             let opp_squares = state.status_map.count_opp_cells();
             status = match my_squares.cmp(&opp_squares) {
-                Ordering::Greater => TicTacToeStatus::Me,
-                Ordering::Less => TicTacToeStatus::Opp,
+                Ordering::Greater => TicTacToeStatus::First,
+                Ordering::Less => TicTacToeStatus::Second,
                 Ordering::Equal => TicTacToeStatus::Tie,
             };
         }
@@ -252,7 +253,7 @@ impl MCTSGame for UltTTTMCTSGame {
         state.last_player
     }
     fn perspective_player() -> Self::Player {
-        TicTacToeStatus::Me
+        TicTacToeStatus::First
     }
 }
 

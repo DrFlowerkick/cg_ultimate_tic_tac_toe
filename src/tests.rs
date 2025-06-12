@@ -41,7 +41,6 @@ fn test_mcts_ult_ttt_no_game_cache() {
             EXPECTED_NUM_NODES,
         );
         let mut first_ult_ttt_game_data = UltTTT::new();
-        first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
         let mut first_time_out = TIME_OUT_FIRST_TURN;
         let mut second_mcts_ult_ttt: PlainMCTS<
             UltTTTMCTSGame,
@@ -58,7 +57,6 @@ fn test_mcts_ult_ttt_no_game_cache() {
             EXPECTED_NUM_NODES_PLAIN,
         );
         let mut second_ult_ttt_game_data = UltTTT::new();
-        second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
         let mut second_time_out = TIME_OUT_FIRST_TURN;
 
         let mut first = true;
@@ -123,10 +121,10 @@ fn test_mcts_ult_ttt_no_game_cache() {
         eprintln!("Game ended");
         eprintln!("{}", first_ult_ttt_game_data);
         match first_ult_ttt_game_data.status_map.get_status() {
-            TicTacToeStatus::Me => {
+            TicTacToeStatus::First => {
                 eprintln!("first winner");
             }
-            TicTacToeStatus::Opp => {
+            TicTacToeStatus::Second => {
                 eprintln!("second winner");
             }
             TicTacToeStatus::Tie => eprintln!("tie"),
@@ -186,12 +184,9 @@ fn test_mcts_ult_ttt_new_vs_old_heuristic() {
 
         let mut first = i % 2 == 0;
         let first_is_start_player = first;
-        if first {
-            first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
-            second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
-        } else {
-            first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
-            second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
+        if !first {
+            first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Second);
+            second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Second);
         }
         let mut turn_counter = 0;
         while UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
@@ -251,10 +246,10 @@ fn test_mcts_ult_ttt_new_vs_old_heuristic() {
         }
         eprint!("Game ended: ");
         match first_ult_ttt_game_data.status_map.get_status() {
-            TicTacToeStatus::Me => {
+            TicTacToeStatus::First => {
                 eprintln!("first winner");
             }
-            TicTacToeStatus::Opp => {
+            TicTacToeStatus::Second => {
                 eprintln!("second winner");
             }
             TicTacToeStatus::Tie => eprintln!("tie"),
@@ -337,12 +332,9 @@ fn test_mcts_ult_ttt_set_root_vs_reset_root_no_tt() {
 
         let mut first = i % 2 == 0;
         let first_is_start_player = first;
-        if first {
-            first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
-            second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
-        } else {
-            first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Opp);
-            second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Me);
+        if !first {
+            first_ult_ttt_game_data.set_current_player(TicTacToeStatus::Second);
+            second_ult_ttt_game_data.set_current_player(TicTacToeStatus::Second);
         }
         let mut turn_counter = 0;
         while UltTTTMCTSGame::evaluate(&first_ult_ttt_game_data, &mut first_mcts_ult_ttt.game_cache)
@@ -375,12 +367,6 @@ fn test_mcts_ult_ttt_set_root_vs_reset_root_no_tt() {
                 first = false;
             } else {
                 let start = Instant::now();
-                /*if !second_mcts_ult_ttt.set_root(&second_ult_ttt_game_data) && turn_counter > 2 {
-                    second_reset_counter
-                        .entry(!first_is_start_player)
-                        .and_modify(|k| k.push(turn_counter))
-                        .or_insert(vec![turn_counter]);
-                }*/
                 second_mcts_ult_ttt.reset_root(&second_ult_ttt_game_data);
                 while start.elapsed() < second_time_out {
                     second_mcts_ult_ttt.iterate();
@@ -402,10 +388,10 @@ fn test_mcts_ult_ttt_set_root_vs_reset_root_no_tt() {
         }
         eprint!("Game ended: ");
         match first_ult_ttt_game_data.status_map.get_status() {
-            TicTacToeStatus::Me => {
+            TicTacToeStatus::First => {
                 eprintln!("first winner");
             }
-            TicTacToeStatus::Opp => {
+            TicTacToeStatus::Second => {
                 eprintln!("second winner");
             }
             TicTacToeStatus::Tie => eprintln!("tie"),

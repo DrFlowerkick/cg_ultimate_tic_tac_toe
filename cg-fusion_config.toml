@@ -50,7 +50,7 @@
 # pulled into the fusion automatically.
 [impl_items]
 include = [
-    "allowed_children@impl<G,H,Config> HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
+    "allowed_children@impl<G,H,Config> HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
     "cell_weight",
     "count_me_cells",
     "count_non_vacant_cells",
@@ -68,18 +68,17 @@ include = [
     "iter_map",
     "iterate@impl<T:Default+Clone+Copy> MyMap3x3<T>",
     "new@impl UltTTT",
-    "new@impl<G,H,MC,UC,TT,UP,EP,SP> PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
+    "new@impl<G,H,MC,UC,TT,UP,EP,SP> PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig<G::Player>,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
     "new@impl<T:Default+Clone+Copy> MyMap3x3<T>",
     "new_optimized@impl UltTTTHeuristicConfig",
     "new_optimized@impl UltTTTMCTSConfig",
     "next_player@impl UltTTT",
     "set_cell",
     "set_cell_value",
-    "set_current_player@impl UltTTT",
     "threshold"
 ]
 exclude = [
-    "get_cell_value@impl UltTTT",
+    "get_cell_value@impl UltTTT"
 ]
 [impl_blocks]
 include = [
@@ -92,22 +91,24 @@ include = [
     "impl GamePlayer for TicTacToeStatus",
     "impl Heuristic<UltTTTMCTSGame> for UltTTTHeuristic",
     "impl HeuristicConfig for UltTTTHeuristicConfig",
-    "impl MCTSConfig for UltTTTMCTSConfig",
+    "impl MCTSConfig<TicTacToeStatus> for UltTTTMCTSConfig",
     "impl TicTacToeStatus",
     "impl TryFrom<(u8,u8)> for CellIndex3x3",
     "impl TryFrom<usize> for CellIndex3x3",
     "impl UltTTT",
     "impl UltTTTHeuristicConfig",
     "impl UltTTTMCTSConfig",
+    "impl<G,Config> UCTPolicy<G,Config> for DynamicC whereG:MCTSGame,Config:MCTSConfig<G::Player>,",
+    "impl<G,Config> UCTPolicy<G,Config> for DynamicCWithExplorationBoost whereG:MCTSGame,Config:MCTSConfig<G::Player>,",
     "impl<G,H,A,UC> MCTSTree<G,H,A> for PlainTree<G,H,A,UC> whereG:MCTSGame,H:Heuristic<G>,A:MCTSAlgo<G,H,NodeID=usize>,UC:UTCCache<G,A::UTC,A::Config>,",
-    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
-    "impl<G,H,Config> HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
-    "impl<G,H,MC,UC,TT,UP,EP,SP> MCTSAlgo<G,H> for PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
-    "impl<G,H,MC,UC,TT,UP,EP,SP> PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
-    "impl<G,H,MC,UC,UP,EP> MCTSNode<G,H,MC,UP,EP> for PlainNode<G,H,MC,UC,UP,EP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig,UC:UTCCache<G,UP,MC>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,",
-    "impl<G,UTC,Config> UTCCache<G,UTC,Config> for CachedUTC whereG:MCTSGame,UTC:UCTPolicy<G,Config>,Config:MCTSConfig,",
-    "impl<G:MCTSGame,Config:MCTSConfig> UCTPolicy<G,Config> for DynamicC",
-    "impl<G:MCTSGame,H:Heuristic<G>,Config:MCTSConfig> SimulationPolicy<G,H,Config> for HeuristicCutoff",
+    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
+    "impl<G,H,Config> HeuristicProgressiveWidening<G,H,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
+    "impl<G,H,Config> SimulationPolicy<G,H,Config> for HeuristicCutoff whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
+    "impl<G,H,MC,UC,TT,UP,EP,SP> MCTSAlgo<G,H> for PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig<G::Player>,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
+    "impl<G,H,MC,UC,TT,UP,EP,SP> PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig<G::Player>,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
+    "impl<G,H,MC,UC,UP,EP> MCTSNode<G,H,MC,UP,EP> for PlainNode<G,H,MC,UC,UP,EP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig<G::Player>,UC:UTCCache<G,UP,MC>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,",
+    "impl<G,UTC,Config> UTCCache<G,UTC,Config> for CachedUTC whereG:MCTSGame,UTC:UCTPolicy<G,Config>,Config:MCTSConfig<G::Player>,",
+    "impl<Player:GamePlayer> MCTSConfig<Player> for BaseConfig<Player>",
     "impl<State,ID> TranspositionTable<State,ID> for NoTranspositionTable",
     "impl<State,ID> TranspositionTable<State,ID> for TranspositionHashMap<State,ID> whereState:Eq+std::hash::Hash,",
     "impl<State,Move> GameCache<State,Move> for NoGameCache<State,Move>",
@@ -115,27 +116,26 @@ include = [
     "impl<T:Default+Clone+Copy> MyMap3x3<T>"
 ]
 exclude = [
-    "impl HeuristicCache<UltTTT,UltTTTMove> for UltTTTHeuristicCache",
-    "impl Default for BaseConfig",
     "impl Default for BaseHeuristicConfig",
     "impl Display for CellIndex3x3",
     "impl Display for UltTTT",
     "impl GameCache<TicTacToeGame,TicTacToePlayerAction> for TicTacToeGameCache",
     "impl GameCache<UltTTT,UltTTTMove> for UltTTTGameCache",
     "impl Heuristic<UltTTTMCTSGame> for OldUltTTTHeuristic",
+    "impl HeuristicCache<UltTTT,UltTTTMove> for UltTTTHeuristicCache",
     "impl HeuristicConfig for BaseHeuristicConfig",
-    "impl MCTSConfig for BaseConfig",
     "impl MCTSGame for TicTacToeMCTSGame",
     "impl TicTacToeGameData",
     "impl UltTTTGameCacheTrait for NoGameCache<UltTTT,UltTTTMove>",
-    "impl UltTTTGameCacheTrait for UltTTTGameCache",
     "impl std::fmt::Display for TicTacToeGameData",
     "impl std::fmt::Display for TicTacToeStatus",
-    "impl<G,Config> ProgressiveWidening<G,Config> whereG:MCTSGame,Config:MCTSConfig,",
-    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for ExpandAll whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
-    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for ProgressiveWidening<G,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig,",
-    "impl<G,UTC,Config> UTCCache<G,UTC,Config> for NoUTCCache whereG:MCTSGame,UTC:UCTPolicy<G,Config>,Config:MCTSConfig,",
-    "impl<G:MCTSGame,Config:MCTSConfig> UCTPolicy<G,Config> for StaticC",
-    "impl<G:MCTSGame,H:Heuristic<G>,Config:MCTSConfig> SimulationPolicy<G,H,Config> for DefaultSimulationPolicy",
-    "impl<G:MCTSGame,H:Heuristic<G>,Config:MCTSConfig> SimulationPolicy<G,H,Config> for EarlyCutoff"
+    "impl<G,Config> ProgressiveWidening<G,Config> whereG:MCTSGame,Config:MCTSConfig<G::Player>,",
+    "impl<G,Config> UCTPolicy<G,Config> for StaticC whereG:MCTSGame,Config:MCTSConfig<G::Player>,",
+    "impl<G,Config> UCTPolicy<G,Config> for StaticCWithExplorationBoost whereG:MCTSGame,Config:MCTSConfig<G::Player>,",
+    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for ExpandAll whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
+    "impl<G,H,Config> ExpansionPolicy<G,H,Config> for ProgressiveWidening<G,Config> whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
+    "impl<G,H,Config> SimulationPolicy<G,H,Config> for DefaultSimulationPolicy whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
+    "impl<G,H,Config> SimulationPolicy<G,H,Config> for EarlyCutoff whereG:MCTSGame,H:Heuristic<G>,Config:MCTSConfig<G::Player>,",
+    "impl<G,UTC,Config> UTCCache<G,UTC,Config> for NoUTCCache whereG:MCTSGame,UTC:UCTPolicy<G,Config>,Config:MCTSConfig<G::Player>,",
+    "impl<Player:GamePlayer> Default for BaseConfig<Player>"
 ]

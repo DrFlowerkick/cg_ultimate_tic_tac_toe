@@ -21,9 +21,9 @@ impl OldUltTTTHeuristic {
     ) -> bool {
         // direct loss -> look at threats of other player
         match player {
-            TicTacToeStatus::Me => opp_threats > 0 && opp_meta_threats > 0,
-            TicTacToeStatus::Opp => my_threats > 0 && my_meta_threats > 0,
-            _ => unreachable!("Player is alway Me or Opp"),
+            TicTacToeStatus::First => opp_threats > 0 && opp_meta_threats > 0,
+            TicTacToeStatus::Second => my_threats > 0 && my_meta_threats > 0,
+            _ => unreachable!("Player is alway First or Second"),
         }
     }
 }
@@ -134,9 +134,9 @@ impl Heuristic<UltTTTMCTSGame> for OldUltTTTHeuristic {
                     // constraint factor is applied to current_player, because NextActionConstraint constrains
                     // next moves of current_player.
                     let (my_constraint_factor, opp_constraint_factor) = match state.current_player {
-                        TicTacToeStatus::Me => (constraint_factor, 1.0),
-                        TicTacToeStatus::Opp => (1.0, constraint_factor),
-                        _ => unreachable!("Only Me and Opp are allowed for player."),
+                        TicTacToeStatus::First => (constraint_factor, 1.0),
+                        TicTacToeStatus::Second => (1.0, constraint_factor),
+                        _ => unreachable!("Only First and Second are allowed for player."),
                     };
                     my_threat_sum += my_constraint_factor
                         * my_meta_factor
@@ -169,9 +169,9 @@ impl Heuristic<UltTTTMCTSGame> for OldUltTTTHeuristic {
         // score is calculated from perspective of me
         // --> invert score, if last_player is opp
         let score = match state.last_player {
-            TicTacToeStatus::Me => score,
-            TicTacToeStatus::Opp => 1.0 - score,
-            _ => unreachable!("Player is alway Me or Opp"),
+            TicTacToeStatus::First => score,
+            TicTacToeStatus::Second => 1.0 - score,
+            _ => unreachable!("Player is alway First or Second"),
         };
         heuristic_cache.insert_intermediate_score(state, score);
         if perspective_is_last_player {

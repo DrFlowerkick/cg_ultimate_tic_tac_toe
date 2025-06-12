@@ -11,7 +11,7 @@ fn run_matches(config: Config, total_matches: usize) -> Vec<f64> {
         .into_par_iter()
         .map(|i| {
             let is_starting_player = i % 2 == 0;
-            run_match(config, is_starting_player).0
+            run_match(config.clone(), is_starting_player).0
         })
         .collect()
 }
@@ -21,7 +21,7 @@ fn analyze_stability(config: Config) {
     let eval_sizes = [10, 25, 50, 100];
 
     for &size in &eval_sizes {
-        let scores = run_matches(config, size);
+        let scores = run_matches(config.clone(), size);
         let mean = scores.clone().mean();
         let std_dev = scores.std_dev();
 

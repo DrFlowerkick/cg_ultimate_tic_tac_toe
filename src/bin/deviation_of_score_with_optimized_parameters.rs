@@ -55,7 +55,7 @@ fn run() -> anyhow::Result<()> {
         let mut scores: Vec<f64> = Vec::with_capacity(num_test_runs + 1);
         scores.push(candidate.score);
         for _ in 0..num_test_runs {
-            let score = objective_function.evaluate(config)?;
+            let score = objective_function.evaluate(config.clone())?;
             scores.push(score);
         }
         let mean_score = (&scores).mean();

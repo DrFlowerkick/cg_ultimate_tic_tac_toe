@@ -2,7 +2,6 @@ use my_lib::my_mcts::{
     CachedUTC, DynamicC, HeuristicCutoff, MCTSAlgo, MCTSGame, PlainMCTS, PlainTTHashMap,
 };
 
-use my_lib::my_tic_tac_toe::TicTacToeStatus;
 use std::io;
 use std::sync::mpsc;
 use std::thread;
@@ -79,15 +78,7 @@ fn main() {
         expected_num_nodes,
     );
     mcts_ult_ttt.set_root(&game_data);
-    // create secondary tree for opponent in first turn, before receiving initial input
-    let mut secondary_game_data = UltTTT::new();
-    secondary_game_data.set_current_player(TicTacToeStatus::Opp);
-    let mut secondary_mcts_ult_ttt = UltTTTMCTS::new(
-        UltTTTMCTSConfig::new_optimized(),
-        UltTTTHeuristicConfig::new_optimized(),
-        expected_num_nodes,
-    );
-    secondary_mcts_ult_ttt.set_root(&secondary_game_data);
+
     // init variables
     let mut turn_counter = 0;
     let mut first_turn = true;
@@ -95,6 +86,7 @@ fn main() {
     let mut instant_input_received = Instant::now();
     let mut input_received = false;
     let mut number_of_iterations = 0;
+    eprintln!("Starting pre-filling tree");
     loop {
         match rx.try_recv() {
             Ok((opponent_row, opponent_col)) => {
@@ -109,29 +101,24 @@ fn main() {
                     // check if opponent is starting_player
                     // me is start player, if (opponent_row, opponent_col) == (-1, -1)
                     if opponent_row >= 0 {
+                        eprintln!("I'm second player.");
                         // opponent made a move, increment turn counter
                         turn_counter += 1;
                         // opponent is start player
                         let opp_action = (opponent_col as u8, opponent_row as u8);
                         // set game_data to secondary_game_data with applied opponent move
                         game_data = UltTTTMCTSGame::apply_move(
-                            &secondary_game_data,
+                            &game_data,
                             &UltTTTMove::try_from(opp_action).unwrap(),
                             &mut mcts_ult_ttt.game_cache,
                         );
-                        if !secondary_mcts_ult_ttt.set_root(&game_data) {
+                        if !mcts_ult_ttt.set_root(&game_data) {
                             eprintln!("Reset root of secondary_mcts_ult_ttt.");
                         }
-                        // continue with tree of secondary_mcts_ult_ttt
-                        let replace_target_secondary_mcts_ult_ttt = UltTTTMCTS::new(
-                            UltTTTMCTSConfig::new_optimized(),
-                            UltTTTHeuristicConfig::new_optimized(),
-                            0,
-                        );
-                        mcts_ult_ttt = std::mem::replace(
-                            &mut secondary_mcts_ult_ttt,
-                            replace_target_secondary_mcts_ult_ttt,
-                        );
+                        // ToDo: set exploration boost for first and second
+                    } else {
+                        eprintln!("I'm first player.");
+                        // ToDo: set exploration boost for second and first
                     }
                 } else {
                     // successive turn
@@ -156,10 +143,6 @@ fn main() {
                 let time_elapsed_since_start = start.elapsed();
                 if time_elapsed_since_start > time_out_codingame_input {
                     panic!("Timeout while waiting for codingame input");
-                }
-                // check perspective of opponent in first turn until initial input is received
-                if first_turn && !input_received {
-                    secondary_mcts_ult_ttt.iterate();
                 }
                 // expand mcts tree until new input is received and
                 // time_out after received input is reached

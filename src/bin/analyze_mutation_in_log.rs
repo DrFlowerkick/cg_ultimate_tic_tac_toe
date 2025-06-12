@@ -39,7 +39,7 @@ fn run() -> anyhow::Result<()> {
         }
         if stats.parent_score > 0.82 {
             count_best_parent += 1;
-            best_parent_config = Some(stats.parent_config);
+            best_parent_config = Some(stats.parent_config.clone());
             println!(
                 "Best Parent Found - Generation: {}, ID: {}, Parent Score: {:.2}, Offspring Score: {:.2}",
                 key.generation, key.id, stats.parent_score, stats.offspring_score

@@ -1,10 +1,13 @@
 // configuration of UltTTT for MCTS and heuristic
 
-use my_lib::my_mcts::{BaseConfig, BaseHeuristicConfig, HeuristicConfig, MCTSConfig};
+use my_lib::{
+    my_mcts::{BaseConfig, BaseHeuristicConfig, HeuristicConfig, MCTSConfig},
+    my_tic_tac_toe::TicTacToeStatus,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UltTTTMCTSConfig {
-    pub base_config: BaseConfig,
+    pub base_config: BaseConfig<TicTacToeStatus>,
 }
 
 // exploration_constant,progressive_widening_constant,progressive_widening_exponent,early_cut_off_depth,
@@ -17,7 +20,11 @@ impl UltTTTMCTSConfig {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
                 exploration_constant: 1.298,
-                non_perspective_player_exploration_boost: 1.0,
+                exploration_boost: [
+                    (TicTacToeStatus::First, 1.0),
+                    (TicTacToeStatus::Second, 1.0),
+                ]
+                .into(),
                 progressive_widening_constant: 1.602,
                 progressive_widening_exponent: 0.333,
                 early_cut_off_depth: 15,
@@ -28,7 +35,11 @@ impl UltTTTMCTSConfig {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
                 exploration_constant: 1.992,
-                non_perspective_player_exploration_boost: 1.0,
+                exploration_boost: [
+                    (TicTacToeStatus::First, 1.0),
+                    (TicTacToeStatus::Second, 1.0),
+                ]
+                .into(),
                 progressive_widening_constant: 1.584,
                 progressive_widening_exponent: 0.333,
                 early_cut_off_depth: 12,
@@ -42,7 +53,11 @@ impl Default for UltTTTMCTSConfig {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
                 exploration_constant: 1.4,
-                non_perspective_player_exploration_boost: 1.0,
+                exploration_boost: [
+                    (TicTacToeStatus::First, 1.0),
+                    (TicTacToeStatus::Second, 1.0),
+                ]
+                .into(),
                 progressive_widening_constant: 2.0,
                 progressive_widening_exponent: 0.5,
                 early_cut_off_depth: 30,
@@ -51,9 +66,12 @@ impl Default for UltTTTMCTSConfig {
     }
 }
 
-impl MCTSConfig for UltTTTMCTSConfig {
+impl MCTSConfig<TicTacToeStatus> for UltTTTMCTSConfig {
     fn exploration_constant(&self) -> f32 {
         self.base_config.exploration_constant
+    }
+    fn exploration_boost(&self, player: TicTacToeStatus) -> f32 {
+        self.base_config.exploration_boost(player)
     }
     fn progressive_widening_constant(&self) -> f32 {
         self.base_config.progressive_widening_constant
