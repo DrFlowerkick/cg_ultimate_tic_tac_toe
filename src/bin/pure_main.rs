@@ -1,5 +1,8 @@
+// This version of main does not use any heuristic feature and no expansion boost
+
 use my_lib::my_mcts::{
-    CachedUTC, DynamicC, HeuristicCutoff, MCTSAlgo, MCTSGame, PlainMCTS, PlainTTHashMap,
+    CachedUTC, DefaultSimulationPolicy, DynamicC, ExpandAll, MCTSAlgo, MCTSGame, NoHeuristic,
+    NoTranspositionTable, PlainMCTS,
 };
 use my_lib::my_tic_tac_toe::TicTacToeStatus;
 
@@ -8,10 +11,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cg_ultimate_tic_tac_toe::{
-    HPWDefaultTTTNoGameCache, UltTTT, UltTTTHeuristic, UltTTTHeuristicConfig, UltTTTMCTSConfig,
-    UltTTTMCTSGame, UltTTTMove,
-};
+use cg_ultimate_tic_tac_toe::{UltTTT, UltTTTMCTSConfig, UltTTTMCTSGame, UltTTTMove};
 
 macro_rules! parse_input {
     ($x:expr, $t:ident) => {
@@ -64,18 +64,18 @@ fn main() {
     let expected_num_nodes = 160_000;
     type UltTTTMCTS = PlainMCTS<
         UltTTTMCTSGame,
-        UltTTTHeuristic,
+        NoHeuristic,
         UltTTTMCTSConfig,
         CachedUTC,
-        PlainTTHashMap<UltTTT>,
+        NoTranspositionTable,
         DynamicC,
-        HPWDefaultTTTNoGameCache,
-        HeuristicCutoff,
+        ExpandAll,
+        DefaultSimulationPolicy,
     >;
     let mut game_data = UltTTT::new();
     let mut mcts_ult_ttt = UltTTTMCTS::new(
-        UltTTTMCTSConfig::optimized_v05_initial_phase(),
-        UltTTTHeuristicConfig::optimized_v05(),
+        UltTTTMCTSConfig::default(),
+        NoHeuristic {},
         expected_num_nodes,
     );
     mcts_ult_ttt.set_root(&game_data);

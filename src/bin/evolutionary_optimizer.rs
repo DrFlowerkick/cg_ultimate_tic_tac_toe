@@ -42,7 +42,7 @@ fn run() -> anyhow::Result<()> {
 
     info!("Starting building initial population");
     // Load initial population from file
-    let (base_population, parameter_names) =
+    let (initial_population, parameter_names) =
         load_population::<&str, DefaultTolerance>(filename, true)?;
     assert_eq!(parameter_names, Config::parameter_names());
 
@@ -56,11 +56,11 @@ fn run() -> anyhow::Result<()> {
         estimated_num_of_steps: 50 * 100, // 50 candidates and 100 matches
     };
 
-    let initial_population = base_population.reevaluate_population(
+    /*let initial_population = initial_population.reevaluate_population(
         &population_generator,
         &param_bounds,
         population_saver.clone(),
-    )?;
+    )?;*/
 
     let initial_population = initial_population.resize_population(
         population_size,
@@ -107,7 +107,7 @@ fn run() -> anyhow::Result<()> {
         num_matches: 100,
         early_break_off: Some(EarlyBreakOff {
             num_check_matches: 10,
-            score_threshold: 0.7,
+            score_threshold: 0.55,
         }),
         progress_step_size: 10,
         estimated_num_of_steps: evolutionary_optimizer_configuration

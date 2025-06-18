@@ -1,5 +1,7 @@
 // configuration of UltTTT for MCTS and heuristic
 
+use std::collections::HashMap;
+
 use my_lib::{
     my_mcts::{BaseConfig, BaseHeuristicConfig, HeuristicConfig, MCTSConfig},
     my_tic_tac_toe::TicTacToeStatus,
@@ -44,6 +46,50 @@ impl UltTTTMCTSConfig {
                 progressive_widening_exponent: 0.333,
                 early_cut_off_depth: 12,
             },
+        }
+    }
+    pub fn optimized_v05() -> Self {
+        UltTTTMCTSConfig {
+            base_config: BaseConfig {
+                exploration_constant: 1.112,
+                exploration_boost: [
+                    (TicTacToeStatus::First, 1.084),
+                    (TicTacToeStatus::Second, 0.914),
+                ]
+                .into(),
+                progressive_widening_constant: 1.432,
+                progressive_widening_exponent: 0.333,
+                early_cut_off_depth: 10,
+            },
+        }
+    }
+    pub fn optimized_v05_initial_phase() -> Self {
+        let mut config = Self::optimized_v05();
+        config.base_config.exploration_boost.clear();
+        config
+    }
+    pub fn optimized_v05_set_exploration_boost(&mut self, my_playing_position: TicTacToeStatus) {
+        let config = Self::optimized_v05();
+        match my_playing_position {
+            TicTacToeStatus::First => {
+                self.base_config.exploration_boost = config.base_config.exploration_boost;
+            }
+            TicTacToeStatus::Second => {
+                // exploration boost in config is defined as
+                // me: First and opp: Second
+                // If my playing position is second, I have to switch the exploration boost parameters
+                let mut exploration_boost: HashMap<TicTacToeStatus, f32> = HashMap::new();
+                exploration_boost.insert(
+                    TicTacToeStatus::First,
+                    config.exploration_boost(TicTacToeStatus::Second),
+                );
+                exploration_boost.insert(
+                    TicTacToeStatus::Second,
+                    config.exploration_boost(TicTacToeStatus::First),
+                );
+                self.base_config.exploration_boost = exploration_boost;
+            }
+            _ => panic!("My playing position must always be First or Second"),
         }
     }
 }
@@ -110,20 +156,20 @@ impl UltTTTHeuristicConfig {
     pub fn optimized() -> Self {
         UltTTTHeuristicConfig {
             base_config: BaseHeuristicConfig {
-                progressive_widening_initial_threshold: 0.676,
-                progressive_widening_decay_rate: 0.814,
-                early_cut_off_lower_bound: 0.068,
-                early_cut_off_upper_bound: 0.947,
+                progressive_widening_initial_threshold: 0.837,
+                progressive_widening_decay_rate: 0.844,
+                early_cut_off_lower_bound: 0.025,
+                early_cut_off_upper_bound: 0.942,
             },
-            control_base_weight: 0.538,
-            control_progress_offset: 0.228,
-            control_local_steepness: 0.099,
-            control_global_steepness: 0.599,
-            meta_cell_big_threat: 2.143,
-            meta_cell_small_threat: 0.746,
-            threat_steepness: 0.171,
-            constraint_factor: 0.128,
-            free_choice_constraint_factor: 0.982,
+            control_base_weight: 0.600,
+            control_progress_offset: 0.365,
+            control_local_steepness: 0.060,
+            control_global_steepness: 0.505,
+            meta_cell_big_threat: 3.132,
+            meta_cell_small_threat: 1.106,
+            threat_steepness: 0.721,
+            constraint_factor: 1.390,
+            free_choice_constraint_factor: 0.502,
             direct_loss_value: 0.0,
         }
     }
@@ -144,6 +190,26 @@ impl UltTTTHeuristicConfig {
             threat_steepness: 0.116,
             constraint_factor: 0.100,
             free_choice_constraint_factor: 0.850,
+            direct_loss_value: 0.0,
+        }
+    }
+    pub fn optimized_v05() -> Self {
+        UltTTTHeuristicConfig {
+            base_config: BaseHeuristicConfig {
+                progressive_widening_initial_threshold: 0.602,
+                progressive_widening_decay_rate: 0.859,
+                early_cut_off_lower_bound: 0.095,
+                early_cut_off_upper_bound: 0.946,
+            },
+            control_base_weight: 0.523,
+            control_progress_offset: 0.316,
+            control_local_steepness: 0.088,
+            control_global_steepness: 0.497,
+            meta_cell_big_threat: 3.137,
+            meta_cell_small_threat: 0.989,
+            threat_steepness: 0.199,
+            constraint_factor: 0.100,
+            free_choice_constraint_factor: 0.836,
             direct_loss_value: 0.0,
         }
     }

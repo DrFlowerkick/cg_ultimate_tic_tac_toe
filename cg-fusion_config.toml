@@ -70,9 +70,10 @@ include = [
     "new@impl UltTTT",
     "new@impl<G,H,MC,UC,TT,UP,EP,SP> PlainMCTS<G,H,MC,UC,TT,UP,EP,SP> whereG:MCTSGame,H:Heuristic<G>,MC:MCTSConfig<G::Player>,UC:UTCCache<G,UP,MC>,TT:TranspositionTable<G::State,usize>,UP:UCTPolicy<G,MC>,EP:ExpansionPolicy<G,H,MC>,SP:SimulationPolicy<G,H,MC>,",
     "new@impl<T:Default+Clone+Copy> MyMap3x3<T>",
-    "new_optimized@impl UltTTTHeuristicConfig",
-    "new_optimized@impl UltTTTMCTSConfig",
     "next_player@impl UltTTT",
+    "optimized_v05@impl UltTTTHeuristicConfig",
+    "optimized_v05_initial_phase",
+    "optimized_v05_set_exploration_boost",
     "set_cell",
     "set_cell_value",
     "threshold"
