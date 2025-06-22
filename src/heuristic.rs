@@ -8,6 +8,7 @@ use my_lib::{
 };
 use std::collections::HashSet;
 
+#[derive(Clone)]
 pub struct UltTTTHeuristic {}
 
 impl UltTTTHeuristic {

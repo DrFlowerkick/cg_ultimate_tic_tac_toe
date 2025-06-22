@@ -2,13 +2,17 @@
     "cSpell.words": [
         "chrono",
         "codingame",
+        "dbname",
+        "linfa",
         "mcts",
         "mtcs",
         "mylib",
         "repr",
         "serde",
         "statrs",
+        "stringlike",
         "TTTMCTS",
+        "ultttt",
         "UltTTTMCTSGame",
         "usize"
     ],

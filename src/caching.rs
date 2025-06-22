@@ -11,6 +11,7 @@ use my_lib::{
 
 use std::collections::{HashMap, HashSet};
 
+#[derive(Clone)]
 pub struct UltTTTGameCache {
     pub cache: HashMap<TicTacToeGameData, BoardAnalysis>,
     pub usage: usize,
@@ -113,6 +114,7 @@ impl UltTTTGameCacheTrait for NoGameCache<UltTTT, UltTTTMove> {
     }
 }
 use std::cell::RefCell;
+#[derive(Clone)]
 pub struct UltTTTHeuristicCache {
     pub cache: HashMap<UltTTT, f32>,
     pub usage: RefCell<usize>,

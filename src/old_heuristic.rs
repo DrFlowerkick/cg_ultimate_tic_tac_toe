@@ -9,6 +9,7 @@ use my_lib::{
     my_tic_tac_toe::TicTacToeStatus,
 };
 
+#[derive(Clone)]
 pub struct OldUltTTTHeuristic {}
 
 impl OldUltTTTHeuristic {

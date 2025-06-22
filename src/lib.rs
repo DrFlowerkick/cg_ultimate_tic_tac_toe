@@ -11,6 +11,8 @@ pub use heuristic::*;
 
 pub mod utilities;
 
+pub mod ml_linfa;
+
 mod old_heuristic;
 
 use my_lib::my_map_3x3::*;
