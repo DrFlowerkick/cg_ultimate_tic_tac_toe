@@ -99,6 +99,7 @@ include = [
     "impl UltTTT",
     "impl UltTTTHeuristicConfig",
     "impl UltTTTMCTSConfig",
+    "impl UltTTTMCTSConfig",
     "impl<G,Config> UCTPolicy<G,Config> for DynamicC whereG:MCTSGame,Config:MCTSConfig<G::Player>,",
     "impl<G,Config> UCTPolicy<G,Config> for DynamicCWithExplorationBoost whereG:MCTSGame,Config:MCTSConfig<G::Player>,",
     "impl<G,H,A,UC> MCTSTree<G,H,A> for PlainTree<G,H,A,UC> whereG:MCTSGame,H:Heuristic<G>,A:MCTSAlgo<G,H,NodeID=usize>,UC:UTCCache<G,A::UTC,A::Config>,",
@@ -111,15 +112,16 @@ include = [
     "impl<G,UTC,Config> UTCCache<G,UTC,Config> for CachedUTC whereG:MCTSGame,UTC:UCTPolicy<G,Config>,Config:MCTSConfig<G::Player>,",
     "impl<Player:GamePlayer> MCTSConfig<Player> for BaseConfig<Player>",
     "impl<State,ID> TranspositionTable<State,ID> for NoTranspositionTable",
-    "impl<State,ID> TranspositionTable<State,ID> for TranspositionHashMap<State,ID> whereState:Eq+std::hash::Hash,",
-    "impl<State,Move> GameCache<State,Move> for NoGameCache<State,Move>",
-    "impl<State,Move> HeuristicCache<State,Move> for NoHeuristicCache<State,Move>",
+    "impl<State,ID> TranspositionTable<State,ID> for TranspositionHashMap<State,ID> whereState:Eq+std::hash::Hash+Clone+Sync+Send,ID:Clone+Sync+Send,",
+    "impl<State,Move> GameCache<State,Move> for NoGameCache<State,Move> whereState:Clone,Move:Clone,",
+    "impl<State,Move> HeuristicCache<State,Move> for NoHeuristicCache<State,Move> whereState:Clone,Move:Clone,",
     "impl<T:Default+Clone+Copy> MyMap3x3<T>"
 ]
 exclude = [
     "impl Default for BaseHeuristicConfig",
     "impl Display for CellIndex3x3",
     "impl Display for UltTTT",
+    "impl FeatureExtraction for UltTTT",
     "impl GameCache<TicTacToeGame,TicTacToePlayerAction> for TicTacToeGameCache",
     "impl GameCache<UltTTT,UltTTTMove> for UltTTTGameCache",
     "impl Heuristic<UltTTTMCTSGame> for OldUltTTTHeuristic",

@@ -62,8 +62,8 @@ where
             let visits = i64::try_from(visits).context("visits too large")?;
             let labeled_example = LabeledExample {
                 hash,
-                generation: generation as i64,
-                visits: visits as i64,
+                generation,
+                visits,
                 score: node.get_accumulated_value() as f64,
                 features,
             };

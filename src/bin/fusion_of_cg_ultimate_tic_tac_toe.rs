@@ -154,14 +154,14 @@ impl UltTTTMCTSConfig {
     fn optimized_v05() -> Self {
         UltTTTMCTSConfig {
             base_config: BaseConfig {
-                exploration_constant: 1.112,
+                exploration_constant: 1.101,
                 exploration_boost: [
-                    (TicTacToeStatus::First, 1.084),
-                    (TicTacToeStatus::Second, 0.914),
+                    (TicTacToeStatus::First, 1.490),
+                    (TicTacToeStatus::Second, 1.914),
                 ]
                 .into(),
-                progressive_widening_constant: 1.432,
-                progressive_widening_exponent: 0.333,
+                progressive_widening_constant: 1.222,
+                progressive_widening_exponent: 0.349,
                 early_cut_off_depth: 10,
             },
         }
@@ -245,20 +245,20 @@ impl UltTTTHeuristicConfig {
     fn optimized_v05() -> Self {
         UltTTTHeuristicConfig {
             base_config: BaseHeuristicConfig {
-                progressive_widening_initial_threshold: 0.602,
-                progressive_widening_decay_rate: 0.859,
-                early_cut_off_lower_bound: 0.095,
-                early_cut_off_upper_bound: 0.946,
+                progressive_widening_initial_threshold: 0.703,
+                progressive_widening_decay_rate: 0.823,
+                early_cut_off_lower_bound: 0.065,
+                early_cut_off_upper_bound: 0.942,
             },
-            control_base_weight: 0.523,
-            control_progress_offset: 0.316,
-            control_local_steepness: 0.088,
-            control_global_steepness: 0.497,
-            meta_cell_big_threat: 3.137,
-            meta_cell_small_threat: 0.989,
-            threat_steepness: 0.199,
-            constraint_factor: 0.100,
-            free_choice_constraint_factor: 0.836,
+            control_base_weight: 0.462,
+            control_progress_offset: 0.294,
+            control_local_steepness: 0.062,
+            control_global_steepness: 0.545,
+            meta_cell_big_threat: 3.402,
+            meta_cell_small_threat: 0.644,
+            threat_steepness: 0.173,
+            constraint_factor: 0.224,
+            free_choice_constraint_factor: 1.590,
             direct_loss_value: 0.0,
         }
     }
@@ -299,6 +299,7 @@ impl Default for UltTTTHeuristicConfig {
         }
     }
 }
+#[derive(Clone)]
 struct UltTTTHeuristic {}
 impl UltTTTHeuristic {
     fn get_constraint_factors(
@@ -830,21 +831,25 @@ impl<T: Default + Clone + Copy> MyMap3x3<T> {
     }
 }
 use std::collections::HashMap;
+#[derive(Clone)]
 struct NoTranspositionTable {}
 impl<State, ID> TranspositionTable<State, ID> for NoTranspositionTable {
     fn new(_expected_num_nodes: usize) -> Self {
         NoTranspositionTable {}
     }
 }
+#[derive(Clone)]
 struct TranspositionHashMap<State, ID>
 where
-    State: Eq + std::hash::Hash,
+    State: Eq + std::hash::Hash + Clone + Sync + Send,
+    ID: Clone + Sync + Send,
 {
     table: HashMap<State, ID>,
 }
 impl<State, ID> TranspositionTable<State, ID> for TranspositionHashMap<State, ID>
 where
-    State: Eq + std::hash::Hash,
+    State: Eq + std::hash::Hash + Clone + Sync + Send,
+    ID: Clone + Sync + Send,
 {
     fn new(expected_num_nodes: usize) -> Self {
         Self {
@@ -887,6 +892,7 @@ impl<Player: GamePlayer> MCTSConfig<Player> for BaseConfig<Player> {
     }
 }
 use rand::prelude::SliceRandom;
+#[derive(Clone)]
 struct HeuristicProgressiveWidening<G, H, Config>
 where
     G: MCTSGame,
@@ -997,6 +1003,7 @@ where
         }
     }
 }
+#[derive(Clone)]
 struct HeuristicCutoff {}
 impl<G, H, Config> SimulationPolicy<G, H, Config> for HeuristicCutoff
 where
@@ -1030,6 +1037,7 @@ where
         }
     }
 }
+#[derive(Clone)]
 struct DynamicC {}
 impl<G, Config> UCTPolicy<G, Config> for DynamicC
 where
@@ -1046,6 +1054,7 @@ where
         dynamic_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
+#[derive(Clone)]
 struct DynamicCWithExplorationBoost {}
 impl<G, Config> UCTPolicy<G, Config> for DynamicCWithExplorationBoost
 where
@@ -1064,6 +1073,7 @@ where
         dynamic_c * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
+#[derive(Clone)]
 struct CachedUTC {
     exploitation: f32,
     exploration: f32,
@@ -1124,20 +1134,38 @@ where
         self.exploration
     }
 }
-struct NoGameCache<State, Move> {
+#[derive(Clone)]
+struct NoGameCache<State, Move>
+where
+    State: Clone,
+    Move: Clone,
+{
     phantom: std::marker::PhantomData<(State, Move)>,
 }
-impl<State, Move> GameCache<State, Move> for NoGameCache<State, Move> {
+impl<State, Move> GameCache<State, Move> for NoGameCache<State, Move>
+where
+    State: Clone,
+    Move: Clone,
+{
     fn new() -> Self {
         NoGameCache {
             phantom: std::marker::PhantomData,
         }
     }
 }
-struct NoHeuristicCache<State, Move> {
+#[derive(Clone)]
+struct NoHeuristicCache<State, Move>
+where
+    State: Clone,
+    Move: Clone,
+{
     phantom: std::marker::PhantomData<(State, Move)>,
 }
-impl<State, Move> HeuristicCache<State, Move> for NoHeuristicCache<State, Move> {
+impl<State, Move> HeuristicCache<State, Move> for NoHeuristicCache<State, Move>
+where
+    State: Clone,
+    Move: Clone,
+{
     fn new() -> Self {
         NoHeuristicCache {
             phantom: std::marker::PhantomData,
@@ -1153,6 +1181,7 @@ struct BaseHeuristicConfig {
 }
 use rand::prelude::IteratorRandom;
 type PlainTTHashMap<State> = TranspositionHashMap<State, usize>;
+#[derive(Clone)]
 struct PlainMCTS<G, H, MC, UC, TT, UP, EP, SP>
 where
     G: MCTSGame,
@@ -1401,6 +1430,7 @@ where
         tree.get_node_mut(node_id).update_stats(result);
     }
 }
+#[derive(Clone)]
 struct PlainNode<G, H, MC, UC, UP, EP>
 where
     G: MCTSGame,
@@ -1517,6 +1547,7 @@ type Node<G, H, A, UC> = PlainNode<
     <A as MCTSAlgo<G, H>>::UTC,
     <A as MCTSAlgo<G, H>>::Expansion,
 >;
+#[derive(Clone)]
 struct PlainTree<G, H, A, UC>
 where
     G: MCTSGame,
@@ -1586,7 +1617,7 @@ where
         &self.edges[id][..]
     }
 }
-trait TranspositionTable<State, ID> {
+trait TranspositionTable<State, ID>: Clone + Sync + Send {
     fn new(expected_num_nodes: usize) -> Self;
     fn get(&self, _state: &State) -> Option<&ID> {
         None
@@ -1594,7 +1625,7 @@ trait TranspositionTable<State, ID> {
     fn insert(&mut self, _state: State, _value: ID) {}
     fn clear(&mut self) {}
 }
-trait MCTSConfig<Player: GamePlayer> {
+trait MCTSConfig<Player: GamePlayer>: Clone + Sync + Send {
     fn exploration_constant(&self) -> f32 {
         1.4
     }
@@ -1611,7 +1642,7 @@ trait MCTSConfig<Player: GamePlayer> {
         20
     }
 }
-trait MCTSAlgo<G: MCTSGame, H: Heuristic<G>>: Sized {
+trait MCTSAlgo<G: MCTSGame, H: Heuristic<G>>: Sized + Clone + Sync + Send {
     type Tree: MCTSTree<G, H, Self>;
     type NodeID: Copy + Eq + std::fmt::Debug;
     type Config: MCTSConfig<G::Player>;
@@ -1624,7 +1655,7 @@ trait MCTSAlgo<G: MCTSGame, H: Heuristic<G>>: Sized {
     fn iterate(&mut self);
     fn select_move(&self) -> &G::Move;
 }
-trait UCTPolicy<G: MCTSGame, Config: MCTSConfig<G::Player>> {
+trait UCTPolicy<G: MCTSGame, Config: MCTSConfig<G::Player>>: Clone + Sync + Send {
     fn exploitation_score(
         accumulated_value: f32,
         visits: usize,
@@ -1647,7 +1678,9 @@ trait UCTPolicy<G: MCTSGame, Config: MCTSConfig<G::Player>> {
         mcts_config.exploration_constant() * ((parent_visits as f32).ln() / visits as f32).sqrt()
     }
 }
-trait ExpansionPolicy<G: MCTSGame, H: Heuristic<G>, Config: MCTSConfig<G::Player>> {
+trait ExpansionPolicy<G: MCTSGame, H: Heuristic<G>, Config: MCTSConfig<G::Player>>:
+    Clone + Sync + Send
+{
     fn new(
         state: &G::State,
         game_cache: &mut G::Cache,
@@ -1672,7 +1705,9 @@ trait ExpansionPolicy<G: MCTSGame, H: Heuristic<G>, Config: MCTSConfig<G::Player
         _heuristic_config: &H::Config,
     ) -> Vec<G::Move>;
 }
-trait SimulationPolicy<G: MCTSGame, H: Heuristic<G>, Config: MCTSConfig<G::Player>> {
+trait SimulationPolicy<G: MCTSGame, H: Heuristic<G>, Config: MCTSConfig<G::Player>>:
+    Clone + Sync + Send
+{
     fn should_cutoff(
         _state: &G::State,
         _depth: usize,
@@ -1707,7 +1742,7 @@ where
     fn link_child(&mut self, parent_id: A::NodeID, mv: G::Move, child_id: A::NodeID);
     fn get_children(&self, id: A::NodeID) -> &[(A::NodeID, G::Move)];
 }
-trait UTCCache<G, UTC, Config>
+trait UTCCache<G, UTC, Config>: Clone + Sync + Send
 where
     G: MCTSGame,
     UTC: UCTPolicy<G, Config>,
@@ -1743,7 +1778,7 @@ where
         last_player: G::Player,
     ) -> f32;
 }
-trait MCTSNode<G, H, MC, UP, EP>
+trait MCTSNode<G, H, MC, UP, EP>: Clone + Sync + Send
 where
     G: MCTSGame,
     H: Heuristic<G>,
@@ -1772,7 +1807,11 @@ where
         heuristic_config: &H::Config,
     ) -> Vec<G::Move>;
 }
-trait GameCache<State, Move> {
+trait GameCache<State, Move>: Clone
+where
+    State: Clone,
+    Move: Clone,
+{
     fn new() -> Self;
     fn get_applied_state(&self, _state: &State, _mv: &Move) -> Option<&State> {
         None
@@ -1783,11 +1822,11 @@ trait GameCache<State, Move> {
     }
     fn insert_terminal_value(&mut self, _state: &State, _value: Option<f32>) {}
 }
-trait MCTSGame: Sized {
-    type State: Clone + PartialEq;
-    type Move;
+trait MCTSGame: Sized + Clone + Sync + Send {
+    type State: Clone + PartialEq + Sync + Send;
+    type Move: Clone + Sync + Send;
     type Player: GamePlayer;
-    type Cache: GameCache<Self::State, Self::Move>;
+    type Cache: GameCache<Self::State, Self::Move> + Sync + Send;
     fn available_moves<'a>(state: &'a Self::State) -> Box<dyn Iterator<Item = Self::Move> + 'a>;
     fn apply_move(
         state: &Self::State,
@@ -1800,10 +1839,14 @@ trait MCTSGame: Sized {
     fn perspective_player() -> Self::Player;
 }
 use std::hash::Hash;
-trait GamePlayer: PartialEq + Eq + Hash {
+trait GamePlayer: PartialEq + Eq + Hash + Clone + Sync + Send {
     fn next(&self) -> Self;
 }
-trait HeuristicCache<State, Move> {
+trait HeuristicCache<State, Move>: Clone
+where
+    State: Clone,
+    Move: Clone,
+{
     fn new() -> Self;
     fn get_intermediate_score(&self, _state: &State) -> Option<f32> {
         None
@@ -1828,9 +1871,9 @@ trait HeuristicConfig {
         0.95
     }
 }
-trait Heuristic<G: MCTSGame> {
-    type Cache: HeuristicCache<G::State, G::Move>;
-    type Config: HeuristicConfig;
+trait Heuristic<G: MCTSGame>: Clone + Sync + Send {
+    type Cache: HeuristicCache<G::State, G::Move> + Clone + Sync + Send;
+    type Config: HeuristicConfig + Clone + Sync + Send;
     fn evaluate_state(
         state: &G::State,
         game_cache: &mut G::Cache,

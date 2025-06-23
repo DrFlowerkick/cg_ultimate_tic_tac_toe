@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
 
     // prepare training parameters
     let turn_duration = Duration::from_millis(5_000);
-    let num_matches = 8;
+    let num_matches = 1;
     let generation = 0;
     let min_visits = 20;
     let label_sink = ChannelLabelSink::new(sync_tx.clone());
